@@ -1,3 +1,4 @@
+from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from crud.base import CRUDBase
 from models.user import User
