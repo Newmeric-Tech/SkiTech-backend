@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_permission
 from app.core.database import get_db
-from app.models.models import Department, Employee, Vendor
+from app.models.models import Department, Employee, Role, Vendor
 from app.schemas.schemas import (
     DepartmentCreate, DepartmentResponse, DepartmentUpdate,
     EmployeeCreate, EmployeeResponse, EmployeeUpdate,
@@ -113,10 +113,18 @@ async def create_employee(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("manage_staff")),
 ):
+    emp_data = data.model_dump()
+
+    if not emp_data.get("role_id"):
+        role_result = await db.execute(select(Role).where(Role.name == "Staff"))
+        staff_role = role_result.scalar_one_or_none()
+        if staff_role:
+            emp_data["role_id"] = staff_role.id
+
     emp = Employee(
         tenant_id=UUID(user["tenant_id"]),
         property_id=property_id,
-        **data.model_dump(),
+        **emp_data,
     )
     db.add(emp)
     await db.commit()

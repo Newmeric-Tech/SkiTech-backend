@@ -383,6 +383,21 @@ class SOPResponse(BaseModel):
         from_attributes = True
 
 
+class SOPExecutionResponse(BaseModel):
+    id: UUID
+    sop_id: UUID
+    user_id: UUID
+    property_id: UUID
+    tenant_id: UUID
+    status: str
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class SOPVersionCreate(BaseModel):
     content: str
     version_number: int

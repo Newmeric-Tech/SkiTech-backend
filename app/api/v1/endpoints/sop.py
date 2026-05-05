@@ -19,6 +19,7 @@ from app.schemas.schemas import (
     SOPCategoryCreate, SOPCategoryResponse,
     SOPCreate, SOPResponse, SOPUpdate,
     SOPVersionCreate, SOPVersionResponse,
+    SOPExecutionResponse,
 )
 
 router = APIRouter(prefix="/sop", tags=["SOP"])
@@ -94,6 +95,20 @@ async def create_sop(
         **data.model_dump(),
     )
     db.add(sop)
+    await db.flush()
+
+    if sop.assigned_employee_id:
+        employee = await db.get(Employee, sop.assigned_employee_id)
+        if employee and employee.user_id:
+            execution = SOPExecution(
+                sop_id=sop.id,
+                user_id=employee.user_id,
+                property_id=sop.property_id,
+                tenant_id=sop.tenant_id,
+                status="pending"
+            )
+            db.add(execution)
+
     await db.commit()
     await db.refresh(sop)
     return sop
@@ -221,4 +236,44 @@ async def list_versions(
     result = await db.execute(
         select(SOPVersion).where(SOPVersion.sop_item_id == sop_id)
     )
+    return result.scalars().all()
+
+@router.post("/complete/{execution_id}")
+async def complete_sop(
+    execution_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("view_sop")),
+):
+    from datetime import datetime
+
+    result = await db.execute(
+        select(SOPExecution).where(
+            SOPExecution.id == execution_id,
+            SOPExecution.user_id == UUID(user["user_id"])
+        )
+    )
+
+    exec_obj = result.scalar_one_or_none()
+
+    if not exec_obj:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    exec_obj.status = "completed"
+    exec_obj.completed_at = datetime.utcnow()
+
+    await db.commit()
+
+    return {"message": "SOP completed successfully"}
+
+@router.get("/my-tasks", response_model=List[SOPExecutionResponse])
+async def my_sops(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("view_sop")),
+):
+    result = await db.execute(
+        select(SOPExecution).where(
+            SOPExecution.user_id == UUID(user["user_id"])
+        )
+    )
+
     return result.scalars().all()
