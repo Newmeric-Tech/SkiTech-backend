@@ -6,37 +6,35 @@ Provides dependency injection for database sessions.
 Supports connection pooling and event listeners for production readiness.
 """
 
-from typing import AsyncGenerator
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    create_async_engine,
-)
-from sqlalchemy.orm import sessionmaker
+from .config import settings
 
-from app.core.config import settings
-
-# Create async engine with connection pooling
-engine = create_async_engine(
-    url=settings.DATABASE_URL,
+# Create sync engine with connection pooling
+engine = create_engine(
+    url=settings.DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://") if settings.DATABASE_URL.startswith("postgresql://") else settings.DATABASE_URL,
     echo=settings.DB_ECHO,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,  # Verify connections before using
     pool_recycle=3600,  # Recycle connections after 1 hour
+    connect_args={
+        "application_name": "skitec",
+    },
 )
 
-# Create async session maker
-AsyncSessionLocal = sessionmaker(
+# Create session maker
+SessionLocal = sessionmaker(
     bind=engine,
-    class_=AsyncSession,
+    class_=Session,
     expire_on_commit=False,
     autocommit=False,
     autoflush=False,
 )
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+def get_db_session():
     """
     Dependency injection for database session
 
@@ -44,33 +42,31 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     Automatically handles session cleanup via context manager.
 
     Yields:
-        AsyncSession: SQLAlchemy async session instance
+        Session: SQLAlchemy session instance
     """
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
-async def init_db() -> None:
+def init_db() -> None:
     """
     Initialize database - Create all tables
 
     Run this during application startup.
     Uses declarative base metadata from models.
     """
-    from app.models.base import Base
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    from ..models.base import Base
+    Base.metadata.create_all(bind=engine)
 
 
-async def close_db() -> None:
+def close_db() -> None:
     """
     Close database connections
 
     Run this during application shutdown.
-    Cleans up connection pools and async resources.
+    Cleans up connection pools and resources.
     """
-    await engine.dispose()
+    engine.dispose()

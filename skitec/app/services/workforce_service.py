@@ -10,8 +10,8 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.workforce import WorkforceEntry
-from app.schemas.workforce import WorkforceCreate, WorkforceUpdate
+from ..models.workforce import WorkforceEntry
+from ..schemas.workforce import WorkforceCreate, WorkforceUpdate
 
 
 class WorkforceService:

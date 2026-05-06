@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Skitec"
 
     # Database
-    DATABASE_URL: str = "postgresql://user:password@localhost:5432/skitec_db"
+    DATABASE_URL: str = "postgresql+asyncpg://neondb_owner:npg_rwo8P2MWAekG@ep-nameless-sunset-a4voeg0c-pooler.us-east-1.aws.neon.tech/neondb"
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 0
     DB_ECHO: bool = False
@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     # File Upload
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB
 
+    # AWS S3 Configuration
+    AWS_S3_BUCKET_NAME: str = ""
+    AWS_S3_REGION: str = "us-east-1"
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_ENDPOINT_URL: Optional[str] = None  # For S3-compatible services
+    S3_FILE_UPLOAD_PREFIX: str = "kra-submissions"  # S3 folder prefix
+
     # Redis (for caching & background tasks)
     REDIS_URL: str = "redis://localhost:6379/0"
 
@@ -77,6 +85,7 @@ class Settings(BaseSettings):
         """Pydantic config"""
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
     @property
     def is_production(self) -> bool:

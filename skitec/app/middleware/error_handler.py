@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.utils.exceptions import SkitecException
+from ..utils.exceptions import SkitecException
 
 logger = logging.getLogger(__name__)
 

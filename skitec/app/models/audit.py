@@ -10,7 +10,7 @@ from typing import Optional
 from sqlalchemy import String, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, IdMixin, TimestampMixin
+from .base import Base, IdMixin, TimestampMixin
 
 
 class AuditLog(Base, IdMixin, TimestampMixin):

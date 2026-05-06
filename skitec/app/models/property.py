@@ -10,7 +10,7 @@ from typing import Optional
 from sqlalchemy import Boolean, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, IdMixin, SoftDeleteMixin, TimestampMixin
+from .base import Base, IdMixin, SoftDeleteMixin, TimestampMixin
 
 
 class Property(Base, IdMixin, TimestampMixin, SoftDeleteMixin):

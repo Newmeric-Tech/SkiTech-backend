@@ -11,14 +11,14 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.security import (
+from ..core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
     verify_password,
 )
-from app.models.user import User
-from app.schemas.user import TokenResponse
+from ..models.user import User
+from ..schemas.user import TokenResponse
 
 
 class AuthService:

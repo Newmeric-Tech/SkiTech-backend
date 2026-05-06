@@ -10,10 +10,10 @@ Keep auth logic in services, not in route handlers.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db_session
-from app.schemas.user import LoginRequest, RefreshTokenRequest, TokenResponse
-from app.services.auth_service import AuthService
-from app.utils.exceptions import InvalidCredentialsError
+from ....core.database import get_db_session
+from ....schemas.user import LoginRequest, RefreshTokenRequest, TokenResponse
+from ....services.auth_service import AuthService
+from ....utils.exceptions import InvalidCredentialsError
 
 router = APIRouter(
     prefix="/auth",

@@ -4,12 +4,14 @@ Services Module - Initialization
 Exports all service classes for dependency injection.
 """
 
-from app.services.audit_service import AuditService
-from app.services.auth_service import AuthService
-from app.services.governance_service import GovernanceService
-from app.services.property_service import PropertyService
-from app.services.user_service import UserService
-from app.services.workforce_service import WorkforceService
+from .attendance_service import AttendanceService, GeofenceService
+from .audit_service import AuditService
+from .auth_service import AuthService
+from .governance_service import GovernanceService
+from .kra_service import DailyKRAService, WeeklyKRAService
+from .property_service import PropertyService
+from .user_service import UserService
+from .workforce_service import WorkforceService
 
 __all__ = [
     "AuthService",
@@ -18,4 +20,8 @@ __all__ = [
     "WorkforceService",
     "GovernanceService",
     "AuditService",
+    "DailyKRAService",
+    "WeeklyKRAService",
+    "AttendanceService",
+    "GeofenceService",
 ]

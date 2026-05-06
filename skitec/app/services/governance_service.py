@@ -10,8 +10,8 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.governance import GovernanceWorkflow, WorkflowInstance
-from app.schemas.governance import (
+from ..models.governance import GovernanceWorkflow, WorkflowInstance
+from ..schemas.governance import (
     GovernanceWorkflowCreate,
     WorkflowInstanceCreate,
 )

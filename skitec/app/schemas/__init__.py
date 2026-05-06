@@ -4,14 +4,14 @@ Schemas Module - Initialization
 Exports all Pydantic schemas for API validation.
 """
 
-from app.schemas.common import (
+from .common import (
     ErrorResponse,
     PaginatedResponse,
     PaginationParams,
     SuccessResponse,
     TimestampedModel,
 )
-from app.schemas.governance import (
+from .governance import (
     GovernanceWorkflowCreate,
     GovernanceWorkflowResponse,
     WorkflowInstanceApprove,
@@ -19,13 +19,13 @@ from app.schemas.governance import (
     WorkflowInstanceReject,
     WorkflowInstanceResponse,
 )
-from app.schemas.property import (
+from .property import (
     PropertyCreate,
     PropertyResponse,
     PropertySummary,
     PropertyUpdate,
 )
-from app.schemas.user import (
+from .user import (
     LoginRequest,
     RefreshTokenRequest,
     TokenResponse,
@@ -33,11 +33,32 @@ from app.schemas.user import (
     UserResponse,
     UserUpdate,
 )
-from app.schemas.workforce import (
+from .workforce import (
     WorkforceCreate,
     WorkforceSummary,
     WorkforceUpdate,
     WorkforceResponse,
+)
+from .kra import (
+    DailyKRACreate,
+    DailyKRAResponse,
+    DailyKRAUpdate,
+    DailyKRAListResponse,
+    WeeklyKRACreate,
+    WeeklyKRAResponse,
+    WeeklyKRAUpdate,
+    WeeklyKRAListResponse,
+)
+from .attendance import (
+    GeolocationData,
+    PunchInRequest,
+    PunchOutRequest,
+    AttendanceRecordResponse,
+    PunchInResponse,
+    PunchOutResponse,
+    PropertyGeofenceCreate,
+    PropertyGeofenceResponse,
+    GeolocationHistoryFilter,
 )
 
 __all__ = [
@@ -71,4 +92,23 @@ __all__ = [
     "WorkflowInstanceResponse",
     "WorkflowInstanceApprove",
     "WorkflowInstanceReject",
+    # KRA
+    "DailyKRACreate",
+    "DailyKRAResponse",
+    "DailyKRAUpdate",
+    "DailyKRAListResponse",
+    "WeeklyKRACreate",
+    "WeeklyKRAResponse",
+    "WeeklyKRAUpdate",
+    "WeeklyKRAListResponse",
+    # Attendance & Geolocation
+    "GeolocationData",
+    "PunchInRequest",
+    "PunchOutRequest",
+    "AttendanceRecordResponse",
+    "PunchInResponse",
+    "PunchOutResponse",
+    "PropertyGeofenceCreate",
+    "PropertyGeofenceResponse",
+    "GeolocationHistoryFilter",
 ]

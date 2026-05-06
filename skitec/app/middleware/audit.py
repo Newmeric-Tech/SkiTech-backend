@@ -10,8 +10,8 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.core.database import AsyncSessionLocal
-from app.services.audit_service import AuditService
+from ..core.database import SessionLocal
+from ..services.audit_service import AuditService
 
 
 class AuditMiddleware(BaseHTTPMiddleware):
@@ -39,15 +39,18 @@ class AuditMiddleware(BaseHTTPMiddleware):
             # This is a placeholder - extend with actual audit logic
             # You'll need to extract user ID from JWT token, resource info, etc.
 
-            async with AsyncSessionLocal() as db:
+            db = SessionLocal()
+            try:
                 audit_service = AuditService(db)
                 # Example audit logging
-                # await audit_service.log_action(
+                # audit_service.log_action(
                 #     action="OPERATION",
                 #     resource_type="resource",
                 #     user_id=user_id,
                 #     ip_address=request.client.host,
                 #     status="success" if response.status_code < 400 else "failure"
                 # )
+            finally:
+                db.close()
 
         return response

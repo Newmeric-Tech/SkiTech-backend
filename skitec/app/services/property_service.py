@@ -10,8 +10,8 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.property import Property
-from app.schemas.property import PropertyCreate, PropertyUpdate
+from ..models.property import Property
+from ..schemas.property import PropertyCreate, PropertyUpdate
 
 
 class PropertyService:

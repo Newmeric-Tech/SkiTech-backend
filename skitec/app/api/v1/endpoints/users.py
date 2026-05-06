@@ -10,12 +10,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db_session
-from app.core.security import RolePermissions
-from app.schemas.common import PaginatedResponse
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
-from app.services.user_service import UserService
-from app.utils.exceptions import ConflictError, NotFoundError, ValidationError
+from ....core.database import get_db_session
+from ....core.security import RolePermissions
+from ....schemas.common import PaginatedResponse
+from ....schemas.user import UserCreate, UserResponse, UserUpdate
+from ....services.user_service import UserService
+from ....utils.exceptions import ConflictError, NotFoundError, ValidationError
 
 router = APIRouter(
     prefix="/users",

@@ -11,7 +11,7 @@ from typing import Optional
 from sqlalchemy import Date, String, Text, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, IdMixin, SoftDeleteMixin, TimestampMixin
+from .base import Base, IdMixin, SoftDeleteMixin, TimestampMixin
 
 
 class WorkforceEntry(Base, IdMixin, TimestampMixin, SoftDeleteMixin):

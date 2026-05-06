@@ -4,9 +4,9 @@ Core Module - Initialization
 Exports core dependencies for application.
 """
 
-from app.core.config import settings
-from app.core.database import AsyncSessionLocal, close_db, get_db_session, init_db
-from app.core.security import (
+from .config import settings
+from .database import SessionLocal, close_db, get_db_session, init_db
+from .security import (
     RolePermissions,
     create_access_token,
     create_refresh_token,
@@ -17,7 +17,7 @@ from app.core.security import (
 
 __all__ = [
     "settings",
-    "AsyncSessionLocal",
+    "SessionLocal",
     "get_db_session",
     "init_db",
     "close_db",

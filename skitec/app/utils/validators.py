@@ -7,7 +7,7 @@ Common validators and validation utilities for data integrity.
 import re
 from typing import Optional
 
-from app.utils.exceptions import ValidationError
+from .exceptions import ValidationError
 
 
 class EmailValidator:

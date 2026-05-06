@@ -10,8 +10,8 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.constants import AUDIT_ACTION_CREATE
-from app.models.audit import AuditLog
+from ..core.constants import AUDIT_ACTION_CREATE
+from ..models.audit import AuditLog
 
 
 class AuditService:

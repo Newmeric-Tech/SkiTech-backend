@@ -12,12 +12,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import router as v1_router
-from app.core.config import settings
-from app.core.database import close_db, init_db
-from app.middleware.audit import AuditMiddleware
-from app.middleware.error_handler import ErrorHandlerMiddleware
-from app.middleware.logging import LoggingMiddleware
+from .api.v1 import router as v1_router
+from .core.config import settings
+from .core.database import close_db, init_db
+from .middleware.audit import AuditMiddleware
+from .middleware.error_handler import ErrorHandlerMiddleware
+from .middleware.logging import LoggingMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -40,18 +40,18 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
     try:
-        await init_db()
+        init_db()
         logger.info("Database initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        raise
+        logger.warning(f"Database initialization skipped: {e}")
+        logger.warning("Application will continue without database connection")
 
     yield
 
     # Shutdown
     logger.info("Shutting down application")
     try:
-        await close_db()
+        close_db()
         logger.info("Database connections closed")
     except Exception as e:
         logger.error(f"Error closing database: {e}")
