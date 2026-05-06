@@ -120,27 +120,23 @@ class PunchOutRequest(BaseModel):
 class AttendanceRecordResponse(BaseModel):
     """Response model for attendance record"""
     
-    id: int
-    user_id: int
-    property_id: int
+    id: str  # UUID as string
+    user_id: str
+    property_id: str
+    tenant_id: str
     
     # Punch In
     punch_in_time: datetime
-    punch_in_latitude: float
-    punch_in_longitude: float
-    punch_in_accuracy: Optional[float]
-    punch_in_address: Optional[str]
-    is_within_geofence: bool
-    distance_from_hotel: Optional[float]
+    punch_in_lat: float
+    punch_in_lon: float
+    punch_in_acc: Optional[float]
+    is_within_fence: bool
+    distance_meters: Optional[float]
     
     # Punch Out
     punch_out_time: Optional[datetime] = None
-    punch_out_latitude: Optional[float] = None
-    punch_out_longitude: Optional[float] = None
-    punch_out_accuracy: Optional[float] = None
-    punch_out_address: Optional[str] = None
-    punch_out_within_geofence: Optional[bool] = None
-    punch_out_distance: Optional[float] = None
+    punch_out_lat: Optional[float] = None
+    punch_out_lon: Optional[float] = None
     
     # Duration
     hours_worked: Optional[float] = None
@@ -158,16 +154,16 @@ class AttendanceRecordResponse(BaseModel):
         from_attributes = True
         json_schema_extra = {
             "example": {
-                "id": 1,
-                "user_id": 1,
-                "property_id": 1,
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "user_id": "550e8400-e29b-41d4-a716-446655440001",
+                "property_id": "550e8400-e29b-41d4-a716-446655440002",
+                "tenant_id": "550e8400-e29b-41d4-a716-446655440003",
                 "punch_in_time": "2026-05-05T08:30:00+00:00",
-                "punch_in_latitude": 28.5244,
-                "punch_in_longitude": 77.1855,
-                "punch_in_accuracy": 15.0,
-                "punch_in_address": "Hotel Main Entrance",
-                "is_within_geofence": True,
-                "distance_from_hotel": 45.5,
+                "punch_in_lat": 28.5244,
+                "punch_in_lon": 77.1855,
+                "punch_in_acc": 15.0,
+                "is_within_fence": True,
+                "distance_meters": 45.5,
                 "status": "active",
                 "hours_worked": None,
                 "created_at": "2026-05-05T08:30:00+00:00",
@@ -181,9 +177,9 @@ class PunchInResponse(BaseModel):
     
     success: bool
     message: str
-    attendance_id: int
-    is_within_geofence: bool
-    distance_from_hotel: Optional[float]
+    attendance_id: str  # UUID as string
+    is_within_fence: bool
+    distance_meters: Optional[float]
     warning: Optional[str] = None
     
     class Config:
@@ -192,9 +188,9 @@ class PunchInResponse(BaseModel):
             "example": {
                 "success": True,
                 "message": "Punched in successfully",
-                "attendance_id": 1,
-                "is_within_geofence": True,
-                "distance_from_hotel": 45.5,
+                "attendance_id": "550e8400-e29b-41d4-a716-446655440000",
+                "is_within_fence": True,
+                "distance_meters": 45.5,
                 "warning": None
             }
         }
@@ -205,10 +201,10 @@ class PunchOutResponse(BaseModel):
     
     success: bool
     message: str
-    attendance_id: int
+    attendance_id: str  # UUID as string
     hours_worked: float
-    is_within_geofence: bool
-    distance_from_hotel: Optional[float]
+    is_within_fence: bool
+    distance_meters: Optional[float]
     warning: Optional[str] = None
 
     class Config:
@@ -217,10 +213,10 @@ class PunchOutResponse(BaseModel):
             "example": {
                 "success": True,
                 "message": "Punched out successfully",
-                "attendance_id": 1,
+                "attendance_id": "550e8400-e29b-41d4-a716-446655440000",
                 "hours_worked": 8.5,
-                "is_within_geofence": True,
-                "distance_from_hotel": 50.2,
+                "is_within_fence": True,
+                "distance_meters": 50.2,
                 "warning": None
             }
         }
@@ -229,19 +225,22 @@ class PunchOutResponse(BaseModel):
 class PropertyGeofenceCreate(BaseModel):
     """Request model for creating property geofence"""
     
-    property_id: int
-    property_name: str = Field(
+    property_id: str = Field(
         ...,
+        description="UUID of the property"
+    )
+    property_name: Optional[str] = Field(
+        None,
         max_length=255,
         description="Name of the property"
     )
-    center_latitude: float = Field(
+    center_lat: float = Field(
         ...,
         ge=-90,
         le=90,
         description="Latitude of geofence center"
     )
-    center_longitude: float = Field(
+    center_lng: float = Field(
         ...,
         ge=-180,
         le=180,
@@ -255,13 +254,9 @@ class PropertyGeofenceCreate(BaseModel):
     )
     address: Optional[str] = Field(
         None,
-        max_length=500
+        max_length=255
     )
     city: Optional[str] = Field(
-        None,
-        max_length=100
-    )
-    state: Optional[str] = Field(
         None,
         max_length=100
     )
@@ -269,23 +264,19 @@ class PropertyGeofenceCreate(BaseModel):
         None,
         max_length=100
     )
-    zip_code: Optional[str] = Field(
-        None,
-        max_length=20
-    )
-    description: Optional[str] = Field(
-        None,
-        description="Geofence description"
+    alert_on_breach: Optional[bool] = Field(
+        default=True,
+        description="Alert when breach detected"
     )
 
     class Config:
         """Pydantic config"""
         json_schema_extra = {
             "example": {
-                "property_id": 1,
+                "property_id": "550e8400-e29b-41d4-a716-446655440000",
                 "property_name": "Grand Hotel Delhi",
-                "center_latitude": 28.5244,
-                "center_longitude": 77.1855,
+                "center_lat": 28.5244,
+                "center_lng": 77.1855,
                 "radius_meters": 500,
                 "address": "123 Main Street",
                 "city": "New Delhi",
@@ -297,19 +288,17 @@ class PropertyGeofenceCreate(BaseModel):
 class PropertyGeofenceResponse(BaseModel):
     """Response model for property geofence"""
     
-    id: int
-    property_id: int
-    property_name: str
-    center_latitude: float
-    center_longitude: float
+    id: str  # UUID as string
+    property_id: str
+    tenant_id: str
+    property_name: Optional[str]
+    center_lat: float
+    center_lng: float
     radius_meters: int
     address: Optional[str]
     city: Optional[str]
-    state: Optional[str]
     country: Optional[str]
-    zip_code: Optional[str]
-    is_active: bool
-    description: Optional[str]
+    alert_on_breach: bool
     created_at: datetime
     updated_at: datetime
 

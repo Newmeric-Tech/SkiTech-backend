@@ -3,42 +3,50 @@ Attendance Model - SQLAlchemy ORM Definition
 
 Tracks attendance records including punch in/out events with geolocation data.
 Includes geofencing validation to ensure staff are within hotel premises.
+Aligned with existing database schema using UUIDs and tenant support.
 """
 
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy import (
     Boolean, String, Text, Integer, Float, DateTime, 
-    ForeignKey, Index
+    ForeignKey, Index, UUID as SQLUUID
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, IdMixin, TimestampMixin
+from .base import Base
 
 
-class AttendanceRecord(Base, IdMixin, TimestampMixin):
+class AttendanceRecord(Base):
     """
     Attendance Record Model
     
     Tracks employee punch in/out events with geolocation data.
     Stores latitude, longitude, accuracy, and geofence validation status.
+    Aligned with existing database schema.
     """
 
     __tablename__ = "attendance_records"
-    __table_args__ = (
-        Index("idx_user_id_date", "user_id", "punch_in_time"),
-        Index("idx_property_id_date", "property_id", "punch_in_time"),
-        Index("idx_is_within_geofence", "is_within_geofence"),
-    )
 
-    # User Information
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+    # Primary Keys & Relationships
+    id: Mapped[UUID] = mapped_column(SQLUUID, primary_key=True, index=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        SQLUUID,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
-    property_id: Mapped[int] = mapped_column(
+    user_id: Mapped[UUID] = mapped_column(
+        SQLUUID,
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True
+    )
+    property_id: Mapped[UUID] = mapped_column(
+        SQLUUID,
+        ForeignKey("properties.id", ondelete="RESTRICT"),
         nullable=False,
         index=True
     )
@@ -49,32 +57,28 @@ class AttendanceRecord(Base, IdMixin, TimestampMixin):
         nullable=False,
         index=True
     )
-    punch_in_latitude: Mapped[float] = mapped_column(
+    punch_in_lat: Mapped[float] = mapped_column(
         Float(precision=10),
         nullable=False
     )
-    punch_in_longitude: Mapped[float] = mapped_column(
+    punch_in_lon: Mapped[float] = mapped_column(
         Float(precision=10),
         nullable=False
     )
-    punch_in_accuracy: Mapped[Optional[float]] = mapped_column(
+    punch_in_acc: Mapped[Optional[float]] = mapped_column(
         Float(precision=10),
         nullable=True,
         comment="GPS accuracy in meters"
     )
-    punch_in_address: Mapped[Optional[str]] = mapped_column(
-        String(500),
-        nullable=True
-    )
 
     # Geofencing Validation
-    is_within_geofence: Mapped[bool] = mapped_column(
+    is_within_fence: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
         index=True
     )
-    distance_from_hotel: Mapped[Optional[float]] = mapped_column(
+    distance_meters: Mapped[Optional[float]] = mapped_column(
         Float(precision=10),
         nullable=True,
         comment="Distance in meters from hotel center"
@@ -86,31 +90,13 @@ class AttendanceRecord(Base, IdMixin, TimestampMixin):
         nullable=True,
         index=True
     )
-    punch_out_latitude: Mapped[Optional[float]] = mapped_column(
+    punch_out_lat: Mapped[Optional[float]] = mapped_column(
         Float(precision=10),
         nullable=True
     )
-    punch_out_longitude: Mapped[Optional[float]] = mapped_column(
+    punch_out_lon: Mapped[Optional[float]] = mapped_column(
         Float(precision=10),
         nullable=True
-    )
-    punch_out_accuracy: Mapped[Optional[float]] = mapped_column(
-        Float(precision=10),
-        nullable=True,
-        comment="GPS accuracy in meters"
-    )
-    punch_out_address: Mapped[Optional[str]] = mapped_column(
-        String(500),
-        nullable=True
-    )
-    punch_out_within_geofence: Mapped[Optional[bool]] = mapped_column(
-        Boolean,
-        nullable=True
-    )
-    punch_out_distance: Mapped[Optional[float]] = mapped_column(
-        Float(precision=10),
-        nullable=True,
-        comment="Distance in meters from hotel center at punch out"
     )
 
     # Duration
@@ -122,7 +108,7 @@ class AttendanceRecord(Base, IdMixin, TimestampMixin):
 
     # Status & Notes
     status: Mapped[str] = mapped_column(
-        String(50),
+        String(20),
         default="active",
         nullable=False,
         index=True,
@@ -133,43 +119,64 @@ class AttendanceRecord(Base, IdMixin, TimestampMixin):
         nullable=True
     )
 
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
     def __repr__(self) -> str:
         return (
             f"<AttendanceRecord (id={self.id}, user_id={self.user_id}, "
-            f"punch_in={self.punch_in_time}, within_geofence={self.is_within_geofence})>"
+            f"punch_in={self.punch_in_time}, within_fence={self.is_within_fence})>"
         )
 
 
-class PropertyGeofence(Base, IdMixin, TimestampMixin):
+class PropertyGeofence(Base):
     """
     Property Geofence Configuration Model
     
     Defines geofence boundaries for each property.
     Stores center coordinates and allowed radius.
+    Aligned with existing database schema.
     """
 
     __tablename__ = "property_geofences"
-    __table_args__ = (
-        Index("idx_property_id", "property_id"),
+
+    # Primary Keys & Relationships
+    id: Mapped[UUID] = mapped_column(SQLUUID, primary_key=True, index=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        SQLUUID,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    property_id: Mapped[UUID] = mapped_column(
+        SQLUUID,
+        ForeignKey("properties.id", ondelete="NO ACTION"),
+        nullable=False,
+        unique=True
     )
 
     # Property Information
-    property_id: Mapped[int] = mapped_column(
-        nullable=False,
-        index=True,
-        unique=True
-    )
-    property_name: Mapped[str] = mapped_column(
+    property_name: Mapped[Optional[str]] = mapped_column(
         String(255),
-        nullable=False
+        nullable=True
     )
 
     # Geofence Center Point
-    center_latitude: Mapped[float] = mapped_column(
+    center_lat: Mapped[float] = mapped_column(
         Float(precision=10),
         nullable=False
     )
-    center_longitude: Mapped[float] = mapped_column(
+    center_lng: Mapped[float] = mapped_column(
         Float(precision=10),
         nullable=False
     )
@@ -177,21 +184,16 @@ class PropertyGeofence(Base, IdMixin, TimestampMixin):
     # Geofence Radius
     radius_meters: Mapped[int] = mapped_column(
         Integer,
-        default=500,
         nullable=False,
         comment="Geofence radius in meters"
     )
 
     # Address Information
     address: Mapped[Optional[str]] = mapped_column(
-        String(500),
+        String(255),
         nullable=True
     )
     city: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True
-    )
-    state: Mapped[Optional[str]] = mapped_column(
         String(100),
         nullable=True
     )
@@ -199,22 +201,25 @@ class PropertyGeofence(Base, IdMixin, TimestampMixin):
         String(100),
         nullable=True
     )
-    zip_code: Mapped[Optional[str]] = mapped_column(
-        String(20),
-        nullable=True
-    )
 
-    # Status
-    is_active: Mapped[bool] = mapped_column(
+    # Alert Configuration
+    alert_on_breach: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         nullable=False
     )
 
-    # Description
-    description: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
     )
 
     def __repr__(self) -> str:

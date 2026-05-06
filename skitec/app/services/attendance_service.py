@@ -27,8 +27,9 @@ class AttendanceService:
     @staticmethod
     def create_punch_in(
         db: Session,
-        user_id: int,
-        property_id: int,
+        user_id: str,  # UUID
+        property_id: str,  # UUID
+        tenant_id: str,  # UUID
         punch_in_request: PunchInRequest
     ) -> Tuple[AttendanceRecord, bool, Optional[str]]:
         """
@@ -36,8 +37,9 @@ class AttendanceService:
         
         Args:
             db: Database session
-            user_id: ID of the user punching in
-            property_id: ID of the property
+            user_id: ID of the user punching in (UUID)
+            property_id: ID of the property (UUID)
+            tenant_id: ID of the tenant (UUID)
             punch_in_request: Punch in request with geolocation data
         
         Returns:
@@ -55,7 +57,7 @@ class AttendanceService:
         # Get property geofence
         geofence = db.query(PropertyGeofence).filter(
             PropertyGeofence.property_id == property_id,
-            PropertyGeofence.is_active == True
+            PropertyGeofence.tenant_id == tenant_id
         ).first()
 
         # Check if within geofence
@@ -67,8 +69,8 @@ class AttendanceService:
             is_within, distance, status = is_within_geofence(
                 punch_in_request.geolocation.latitude,
                 punch_in_request.geolocation.longitude,
-                geofence.center_latitude,
-                geofence.center_longitude,
+                geofence.center_lat,
+                geofence.center_lng,
                 geofence.radius_meters
             )
             
@@ -80,13 +82,13 @@ class AttendanceService:
         attendance = AttendanceRecord(
             user_id=user_id,
             property_id=property_id,
+            tenant_id=tenant_id,
             punch_in_time=datetime.now(timezone.utc),
-            punch_in_latitude=punch_in_request.geolocation.latitude,
-            punch_in_longitude=punch_in_request.geolocation.longitude,
-            punch_in_accuracy=punch_in_request.geolocation.accuracy,
-            punch_in_address=punch_in_request.geolocation.address,
-            is_within_geofence=is_within,
-            distance_from_hotel=distance,
+            punch_in_lat=punch_in_request.geolocation.latitude,
+            punch_in_lon=punch_in_request.geolocation.longitude,
+            punch_in_acc=punch_in_request.geolocation.accuracy,
+            is_within_fence=is_within,
+            distance_meters=distance,
             status="active",
             notes=punch_in_request.notes
         )
@@ -100,8 +102,9 @@ class AttendanceService:
     @staticmethod
     def create_punch_out(
         db: Session,
-        user_id: int,
-        property_id: int,
+        user_id: str,  # UUID
+        property_id: str,  # UUID
+        tenant_id: str,  # UUID
         punch_out_request: PunchOutRequest
     ) -> Tuple[AttendanceRecord, bool, Optional[str]]:
         """
@@ -109,8 +112,9 @@ class AttendanceService:
         
         Args:
             db: Database session
-            user_id: ID of the user punching out
-            property_id: ID of the property
+            user_id: ID of the user punching out (UUID)
+            property_id: ID of the property (UUID)
+            tenant_id: ID of the tenant (UUID)
             punch_out_request: Punch out request with geolocation data
         
         Returns:
@@ -130,6 +134,7 @@ class AttendanceService:
             and_(
                 AttendanceRecord.user_id == user_id,
                 AttendanceRecord.property_id == property_id,
+                AttendanceRecord.tenant_id == tenant_id,
                 AttendanceRecord.status == "active",
                 AttendanceRecord.punch_out_time == None
             )
@@ -141,7 +146,7 @@ class AttendanceService:
         # Get property geofence
         geofence = db.query(PropertyGeofence).filter(
             PropertyGeofence.property_id == property_id,
-            PropertyGeofence.is_active == True
+            PropertyGeofence.tenant_id == tenant_id
         ).first()
 
         # Check if within geofence
@@ -153,8 +158,8 @@ class AttendanceService:
             is_within, distance, status = is_within_geofence(
                 punch_out_request.geolocation.latitude,
                 punch_out_request.geolocation.longitude,
-                geofence.center_latitude,
-                geofence.center_longitude,
+                geofence.center_lat,
+                geofence.center_lng,
                 geofence.radius_meters
             )
             
@@ -164,12 +169,8 @@ class AttendanceService:
 
         # Update attendance record
         attendance.punch_out_time = datetime.now(timezone.utc)
-        attendance.punch_out_latitude = punch_out_request.geolocation.latitude
-        attendance.punch_out_longitude = punch_out_request.geolocation.longitude
-        attendance.punch_out_accuracy = punch_out_request.geolocation.accuracy
-        attendance.punch_out_address = punch_out_request.geolocation.address
-        attendance.punch_out_within_geofence = is_within
-        attendance.punch_out_distance = distance
+        attendance.punch_out_lat = punch_out_request.geolocation.latitude
+        attendance.punch_out_lon = punch_out_request.geolocation.longitude
         attendance.status = "completed"
         
         if punch_out_request.notes:
@@ -188,16 +189,18 @@ class AttendanceService:
     @staticmethod
     def get_active_punch_in(
         db: Session,
-        user_id: int,
-        property_id: int
+        user_id: str,  # UUID
+        property_id: str,  # UUID
+        tenant_id: str  # UUID
     ) -> Optional[AttendanceRecord]:
         """
         Get active punch in record for user.
         
         Args:
             db: Database session
-            user_id: User ID
-            property_id: Property ID
+            user_id: User ID (UUID)
+            property_id: Property ID (UUID)
+            tenant_id: Tenant ID (UUID)
         
         Returns:
             Active attendance record or None
@@ -206,6 +209,7 @@ class AttendanceService:
             and_(
                 AttendanceRecord.user_id == user_id,
                 AttendanceRecord.property_id == property_id,
+                AttendanceRecord.tenant_id == tenant_id,
                 AttendanceRecord.status == "active",
                 AttendanceRecord.punch_out_time == None
             )
@@ -214,11 +218,12 @@ class AttendanceService:
     @staticmethod
     def get_attendance_history(
         db: Session,
-        user_id: int,
-        property_id: Optional[int] = None,
+        user_id: str,  # UUID
+        tenant_id: str,  # UUID
+        property_id: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        is_within_geofence: Optional[bool] = None,
+        is_within_fence: Optional[bool] = None,
         status: Optional[str] = None,
         skip: int = 0,
         limit: int = 50
@@ -228,11 +233,12 @@ class AttendanceService:
         
         Args:
             db: Database session
-            user_id: User ID
-            property_id: Filter by property (optional)
+            user_id: User ID (UUID)
+            tenant_id: Tenant ID (UUID)
+            property_id: Filter by property (optional, UUID)
             start_date: Filter from date (optional)
             end_date: Filter to date (optional)
-            is_within_geofence: Filter by geofence status (optional)
+            is_within_fence: Filter by geofence status (optional)
             status: Filter by status (optional)
             skip: Pagination skip
             limit: Pagination limit
@@ -241,7 +247,10 @@ class AttendanceService:
             Tuple of (records, total_count)
         """
         query = db.query(AttendanceRecord).filter(
-            AttendanceRecord.user_id == user_id
+            and_(
+                AttendanceRecord.user_id == user_id,
+                AttendanceRecord.tenant_id == tenant_id
+            )
         )
 
         # Apply filters
@@ -254,8 +263,8 @@ class AttendanceService:
         if end_date:
             query = query.filter(AttendanceRecord.punch_in_time <= end_date)
         
-        if is_within_geofence is not None:
-            query = query.filter(AttendanceRecord.is_within_geofence == is_within_geofence)
+        if is_within_fence is not None:
+            query = query.filter(AttendanceRecord.is_within_fence == is_within_fence)
         
         if status:
             query = query.filter(AttendanceRecord.status == status)
@@ -273,7 +282,8 @@ class AttendanceService:
     @staticmethod
     def get_daily_summary(
         db: Session,
-        user_id: int,
+        user_id: str,  # UUID
+        tenant_id: str,  # UUID
         date: datetime
     ) -> dict:
         """
@@ -281,7 +291,8 @@ class AttendanceService:
         
         Args:
             db: Database session
-            user_id: User ID
+            user_id: User ID (UUID)
+            tenant_id: Tenant ID (UUID)
             date: Date to summarize
         
         Returns:
@@ -294,6 +305,7 @@ class AttendanceService:
         records = db.query(AttendanceRecord).filter(
             and_(
                 AttendanceRecord.user_id == user_id,
+                AttendanceRecord.tenant_id == tenant_id,
                 AttendanceRecord.punch_in_time >= start_of_day,
                 AttendanceRecord.punch_in_time < end_of_day,
                 AttendanceRecord.status == "completed"
@@ -301,15 +313,15 @@ class AttendanceService:
         ).all()
 
         total_hours = sum(r.hours_worked or 0 for r in records)
-        within_geofence_count = sum(1 for r in records if r.is_within_geofence)
-        outside_geofence_count = len(records) - within_geofence_count
+        within_fence_count = sum(1 for r in records if r.is_within_fence)
+        outside_fence_count = len(records) - within_fence_count
 
         return {
             "date": date.date().isoformat(),
             "total_records": len(records),
             "total_hours_worked": round(total_hours, 2),
-            "within_geofence_count": within_geofence_count,
-            "outside_geofence_count": outside_geofence_count,
+            "within_fence_count": within_fence_count,
+            "outside_fence_count": outside_fence_count,
             "records": records
         }
 
@@ -320,6 +332,7 @@ class GeofenceService:
     @staticmethod
     def create_geofence(
         db: Session,
+        tenant_id: str,  # UUID
         geofence_data: PropertyGeofenceCreate
     ) -> PropertyGeofence:
         """
@@ -327,6 +340,7 @@ class GeofenceService:
         
         Args:
             db: Database session
+            tenant_id: Tenant ID (UUID)
             geofence_data: Geofence configuration data
         
         Returns:
@@ -334,7 +348,8 @@ class GeofenceService:
         """
         # Check if geofence already exists for property
         existing = db.query(PropertyGeofence).filter(
-            PropertyGeofence.property_id == geofence_data.property_id
+            PropertyGeofence.property_id == geofence_data.property_id,
+            PropertyGeofence.tenant_id == tenant_id
         ).first()
 
         if existing:
@@ -342,17 +357,15 @@ class GeofenceService:
 
         geofence = PropertyGeofence(
             property_id=geofence_data.property_id,
+            tenant_id=tenant_id,
             property_name=geofence_data.property_name,
-            center_latitude=geofence_data.center_latitude,
-            center_longitude=geofence_data.center_longitude,
+            center_lat=geofence_data.center_lat,
+            center_lng=geofence_data.center_lng,
             radius_meters=geofence_data.radius_meters,
             address=geofence_data.address,
             city=geofence_data.city,
-            state=geofence_data.state,
             country=geofence_data.country,
-            zip_code=geofence_data.zip_code,
-            is_active=True,
-            description=geofence_data.description
+            alert_on_breach=geofence_data.alert_on_breach or True
         )
 
         db.add(geofence)
@@ -364,7 +377,7 @@ class GeofenceService:
     @staticmethod
     def update_geofence(
         db: Session,
-        geofence_id: int,
+        geofence_id: str,  # UUID
         geofence_data: PropertyGeofenceCreate
     ) -> PropertyGeofence:
         """
@@ -372,7 +385,7 @@ class GeofenceService:
         
         Args:
             db: Database session
-            geofence_id: Geofence ID
+            geofence_id: Geofence ID (UUID)
             geofence_data: Updated geofence data
         
         Returns:
@@ -387,7 +400,8 @@ class GeofenceService:
 
         # Update fields
         for field, value in geofence_data.dict(exclude_unset=True).items():
-            setattr(geofence, field, value)
+            if value is not None and field != 'property_id':
+                setattr(geofence, field, value)
 
         db.commit()
         db.refresh(geofence)
@@ -397,55 +411,63 @@ class GeofenceService:
     @staticmethod
     def get_geofence(
         db: Session,
-        property_id: int
+        property_id: str,  # UUID
+        tenant_id: str  # UUID
     ) -> Optional[PropertyGeofence]:
         """
         Get geofence for a property.
         
         Args:
             db: Database session
-            property_id: Property ID
+            property_id: Property ID (UUID)
+            tenant_id: Tenant ID (UUID)
         
         Returns:
             Geofence record or None
         """
         return db.query(PropertyGeofence).filter(
-            PropertyGeofence.property_id == property_id
+            PropertyGeofence.property_id == property_id,
+            PropertyGeofence.tenant_id == tenant_id
         ).first()
 
     @staticmethod
     def list_geofences(
         db: Session,
+        tenant_id: str,  # UUID
         skip: int = 0,
         limit: int = 100
     ) -> Tuple[List[PropertyGeofence], int]:
         """
-        List all geofences.
+        List all geofences for a tenant.
         
         Args:
             db: Database session
+            tenant_id: Tenant ID (UUID)
             skip: Pagination skip
             limit: Pagination limit
         
         Returns:
             Tuple of (geofences, total_count)
         """
-        total_count = db.query(PropertyGeofence).count()
-        geofences = db.query(PropertyGeofence).offset(skip).limit(limit).all()
+        query = db.query(PropertyGeofence).filter(
+            PropertyGeofence.tenant_id == tenant_id
+        )
+        total_count = query.count()
+        geofences = query.offset(skip).limit(limit).all()
 
         return geofences, total_count
 
     @staticmethod
     def delete_geofence(
         db: Session,
-        geofence_id: int
+        geofence_id: str  # UUID
     ) -> bool:
         """
-        Delete a geofence (soft delete via is_active).
+        Delete a geofence.
         
         Args:
             db: Database session
-            geofence_id: Geofence ID
+            geofence_id: Geofence ID (UUID)
         
         Returns:
             True if successful
@@ -457,7 +479,7 @@ class GeofenceService:
         if not geofence:
             raise ValueError(f"Geofence {geofence_id} not found")
 
-        geofence.is_active = False
+        db.delete(geofence)
         db.commit()
 
         return True
