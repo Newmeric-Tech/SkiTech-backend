@@ -8,11 +8,14 @@ Role-based visibility enforced (Staff sees only their department's SOPs).
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import boto3
+from botocore.exceptions import ClientError
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import require_permission
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import SOPCategory, SOPItem, SOPVersion
 from app.schemas.schemas import (
@@ -277,3 +280,45 @@ async def my_sops(
     )
 
     return result.scalars().all()
+
+
+# ── S3 Upload ─────────────────────────────────────────────
+
+@router.post("/upload/presigned-url")
+def get_sop_upload_url(
+    filename: str = Query(..., description="Name of the file to upload"),
+    file_type: str = Query(..., description="MIME type of the file (e.g. application/pdf)"),
+    user: dict = Depends(require_permission("create_sop")),
+):
+    """
+    Generate a pre-signed S3 URL to upload a SOP document directly from the client.
+    The file is scoped under the tenant's folder: {tenant_id}/sops/{filename}
+    """
+    if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="S3 upload is not configured on this server"
+        )
+
+    tenant_id = user.get("tenant_id", "unknown")
+    object_key = f"{tenant_id}/sops/{filename}"
+
+    try:
+        s3 = boto3.client(
+            "s3",
+            region_name=settings.AWS_REGION,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        )
+        presigned_url = s3.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": settings.S3_SOP_BUCKET,
+                "Key": object_key,
+                "ContentType": file_type,
+            },
+            ExpiresIn=3600,
+        )
+        return {"upload_url": presigned_url, "file_key": object_key}
+    except ClientError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

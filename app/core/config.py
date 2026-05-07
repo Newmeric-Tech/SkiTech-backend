@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     SMTP_EMAIL: str = ""
     SMTP_PASSWORD: str = ""
 
+    # AWS S3 (for SOP document and KRA revenue report uploads)
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_REGION: str = "us-east-1"
+    S3_SOP_BUCKET: str = "skitech-sop-documents"
+
     # Logging
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: Optional[str] = None

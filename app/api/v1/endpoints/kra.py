@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db_session
+from app.core.database import get_db as get_db_session
 from app.schemas.common import PaginatedResponse
 from app.schemas.kra import (
     KRAComplianceResponse,
