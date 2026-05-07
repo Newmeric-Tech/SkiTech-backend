@@ -21,6 +21,10 @@ class UUIDMixin:
     )
 
 
+class IdMixin:
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
