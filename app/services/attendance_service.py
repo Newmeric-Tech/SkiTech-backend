@@ -229,6 +229,30 @@ class AttendanceService:
         }
 
 
+    @staticmethod
+    async def get_property_attendance_today(
+        db: AsyncSession,
+        property_id: str,
+        tenant_id: str,
+    ) -> List[AttendanceRecord]:
+        from datetime import timezone, timedelta
+        today = datetime.now(timezone.utc).date()
+        start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end = start + timedelta(days=1)
+
+        result = await db.execute(
+            select(AttendanceRecord).where(
+                and_(
+                    AttendanceRecord.property_id == property_id,
+                    AttendanceRecord.tenant_id == tenant_id,
+                    AttendanceRecord.punch_in_time >= start,
+                    AttendanceRecord.punch_in_time < end,
+                )
+            ).order_by(AttendanceRecord.punch_in_time)
+        )
+        return list(result.scalars().all())
+
+
 class GeofenceService:
     @staticmethod
     async def create_geofence(

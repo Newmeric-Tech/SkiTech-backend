@@ -133,18 +133,31 @@ async def change_password(
 @router.get("/", response_model=list[UserResponse])
 async def list_users(
     property_id: UUID = None,
+    role: str = None,
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_roles(["Super Admin", "Tenant Admin", "Manager"])),
 ):
-    """List all users in the tenant. Optionally filter by property."""
-    q = select(User).where(
-        User.tenant_id == UUID(current_user["tenant_id"]),
-        User.deleted_at == None,
+    """List users in the tenant. Optionally filter by property or role."""
+    q = (
+        select(User)
+        .join(Role, User.role_id == Role.id)
+        .where(
+            User.tenant_id == UUID(current_user["tenant_id"]),
+            User.deleted_at == None,
+        )
     )
+
+    # Non-superadmin callers never see Super Admin accounts
+    if current_user.get("role") != "Super Admin":
+        q = q.where(Role.name != "Super Admin")
+
     if property_id:
         q = q.where(User.property_id == property_id)
+
+    if role:
+        q = q.where(Role.name == role)
 
     result = await db.execute(q.offset(skip).limit(limit))
     return result.scalars().all()

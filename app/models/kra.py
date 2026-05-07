@@ -57,6 +57,9 @@ class MonthlyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     month: Mapped[int] = mapped_column(Integer, nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
+    revenue_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    guest_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    occupancy_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     revenue_report_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
@@ -70,6 +73,9 @@ class QuarterlyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     quarter: Mapped[int] = mapped_column(Integer, nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
+    revenue_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    guest_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    occupancy_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     revenue_report_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)

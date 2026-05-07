@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, Column, DateTime, DECIMAL, ForeignKey,
+    Boolean, CheckConstraint, Column, DateTime, DECIMAL, Float, ForeignKey,
     Index, Integer, String, Text, TIMESTAMP, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
@@ -386,6 +386,7 @@ class SOPItem(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     category_id = Column(UUID(as_uuid=True), ForeignKey("sop_categories.id"), nullable=False)
     department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
     assigned_employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=True)
+    assigned_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     title = Column(String(255), nullable=False)
     description = Column(Text)
@@ -399,6 +400,7 @@ class SOPItem(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         Index("idx_sop_category", "category_id"),
         Index("idx_sop_status", "status"),
         Index("idx_sop_employee", "assigned_employee_id"),
+        Index("idx_sop_user", "assigned_user_id"),
         Index("idx_sop_department_id", "department_id"),
     )
 
@@ -406,6 +408,33 @@ class SOPItem(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     property = relationship("Property", back_populates="sop_items")
     versions = relationship("SOPVersion", back_populates="sop_item", cascade="all, delete-orphan")
     role_visibility = relationship("SOPRoleVisibility", back_populates="sop_item", cascade="all, delete-orphan")
+
+
+class SOPExecution(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "sop_executions"
+
+    sop_id = Column(UUID(as_uuid=True), ForeignKey("sop_items.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+
+    # status: pending | proof_submitted | approved | rejected
+    status = Column(String(50), nullable=False, default="pending")
+    completed_at = Column(DateTime, nullable=True)
+
+    # Proof of work fields
+    proof_image = Column(Text, nullable=True)       # base64 image data
+    proof_submitted_at = Column(DateTime, nullable=True)
+    proof_location_lat = Column(Float, nullable=True)
+    proof_location_lng = Column(Float, nullable=True)
+    proof_location_name = Column(String(255), nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("idx_sop_exec_user", "user_id"),
+        Index("idx_sop_exec_sop", "sop_id"),
+        Index("idx_sop_exec_status", "status"),
+    )
 
 
 class SOPVersion(Base, UUIDMixin):

@@ -8,7 +8,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, require_permission
 from app.core.database import get_db
 from app.schemas.attendance import (
     PunchInRequest, PunchOutRequest, AttendanceRecordResponse,
@@ -247,6 +247,41 @@ async def delete_geofence(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error deleting geofence")
+
+
+@router.get("/property/{property_id}/today")
+async def get_property_attendance_today(
+    property_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("manage_staff")),
+) -> Any:
+    try:
+        records = await AttendanceService.get_property_attendance_today(
+            db=db, property_id=property_id, tenant_id=user["tenant_id"]
+        )
+        today_str = __import__("datetime").date.today().isoformat()
+        present = [r for r in records if r.status in ("active", "completed")]
+        return {
+            "property_id": property_id,
+            "date": today_str,
+            "total_staff": len(records),
+            "present": len(present),
+            "absent": 0,
+            "records": [
+                {
+                    "user_id": str(r.user_id),
+                    "user_name": str(r.user_id),
+                    "punch_in_time": r.punch_in_time.isoformat() if r.punch_in_time else None,
+                    "punch_out_time": r.punch_out_time.isoformat() if r.punch_out_time else None,
+                    "hours_worked": r.hours_worked,
+                    "status": r.status,
+                    "is_within_fence": r.is_within_fence,
+                }
+                for r in records
+            ],
+        }
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error fetching property attendance")
 
 
 @router.get("/geofence")

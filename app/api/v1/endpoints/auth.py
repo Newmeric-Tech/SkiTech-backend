@@ -186,10 +186,13 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         "sub": str(user.id),
         "user_id": str(user.id),
         "tenant_id": str(user.tenant_id) if user.tenant_id else "",
+        "property_id": str(user.property_id) if user.property_id else "",
         "email": user.email,
         "role": actual_role,
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
     }
- 
+
     return TokenResponse(
         access_token=create_access_token(payload),
         refresh_token=create_refresh_token(payload),
@@ -245,8 +248,11 @@ async def superadmin_login(
         "sub": str(user.id),
         "user_id": str(user.id),
         "tenant_id": str(user.tenant_id) if user.tenant_id else "",
+        "property_id": str(user.property_id) if user.property_id else "",
         "email": user.email,
         "role": role_name,
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
     }
 
     return TokenResponse(

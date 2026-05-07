@@ -350,6 +350,7 @@ class SOPCreate(BaseModel):
     title: str
     description: Optional[str] = None
     assigned_employee_id: Optional[UUID] = None
+    assigned_user_id: Optional[UUID] = None
     department_id: Optional[UUID] = None
     priority: PriorityEnum = PriorityEnum.medium
     status: StatusEnum = StatusEnum.pending
@@ -360,6 +361,7 @@ class SOPUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     assigned_employee_id: Optional[UUID] = None
+    assigned_user_id: Optional[UUID] = None
     department_id: Optional[UUID] = None
     priority: Optional[PriorityEnum] = None
     status: Optional[StatusEnum] = None
@@ -376,6 +378,7 @@ class SOPResponse(BaseModel):
     priority: str
     status: str
     due_date: Optional[datetime]
+    assigned_user_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 
@@ -391,6 +394,12 @@ class SOPExecutionResponse(BaseModel):
     tenant_id: UUID
     status: str
     completed_at: Optional[datetime] = None
+    proof_image: Optional[str] = None
+    proof_submitted_at: Optional[datetime] = None
+    proof_location_lat: Optional[float] = None
+    proof_location_lng: Optional[float] = None
+    proof_location_name: Optional[str] = None
+    rejection_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

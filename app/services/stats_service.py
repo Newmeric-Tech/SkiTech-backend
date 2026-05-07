@@ -340,7 +340,8 @@ async def get_staff_stats(
     # Shift hours — simple calculation from start_date
     shift_hours = 0.0
     if employee and employee.start_date:
-        diff = datetime.utcnow() - employee.start_date
+        start = employee.start_date.replace(tzinfo=None)
+        diff = datetime.utcnow() - start
         shift_hours = round(min(diff.total_seconds() / 3600, 12), 1)
 
     # My tasks today
@@ -394,4 +395,41 @@ async def get_staff_stats(
     todays_tasks = []
     for sop in tasks_result.scalars().all():
         due_str = sop.due_date.strftime("%I:%M %p") if sop.due_date else "—"
-        todays
+        todays_tasks.append({
+            "id": sop.id,
+            "task": sop.title,
+            "assignee": "Me",
+            "due": due_str,
+            "status": sop.status,
+        })
+
+    # Weekly performance
+    weekly_performance = []
+    for i, day in enumerate(_get_week_days()):
+        day_start = datetime.combine(day, datetime.min.time())
+        day_end = day_start + timedelta(days=1)
+
+        total_q = select(func.count(SOPItem.id)).where(
+            *base_sop_filter,
+            SOPItem.due_date >= day_start,
+            SOPItem.due_date < day_end,
+        )
+        done_q = select(func.count(SOPItem.id)).where(
+            *base_sop_filter,
+            SOPItem.status == "completed",
+            SOPItem.due_date >= day_start,
+            SOPItem.due_date < day_end,
+        )
+        total = (await db.execute(total_q)).scalar() or 0
+        done = (await db.execute(done_q)).scalar() or 0
+        weekly_performance.append({"day": DAY_NAMES[i], "done": done, "total": total})
+
+    return {
+        "shift_hours": shift_hours,
+        "my_tasks_today": my_tasks_today,
+        "my_tasks_overdue": my_tasks_overdue,
+        "completed_this_week": completed_this_week,
+        "pending_sops": pending_sops,
+        "todays_tasks": todays_tasks,
+        "weekly_performance": weekly_performance,
+    }

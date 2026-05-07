@@ -8,7 +8,7 @@ GET /stats/staff/me            → Staff dashboard stats
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_roles
@@ -33,9 +33,12 @@ async def owner_stats(
     Owner dashboard stats.
     Optional property_id filter — if not given, aggregates across all properties.
     """
+    tenant_id_str = user.get("tenant_id") or ""
+    if not tenant_id_str:
+        raise HTTPException(status_code=400, detail="No tenant assigned to this account")
     return await get_owner_stats(
         db=db,
-        tenant_id=UUID(user["tenant_id"]),
+        tenant_id=UUID(tenant_id_str),
         property_id=property_id,
     )
 
@@ -47,9 +50,12 @@ async def manager_stats(
     user: dict = Depends(require_roles(["Super Admin", "Tenant Admin", "Manager"])),
 ):
     """Manager dashboard stats — scoped to a specific property."""
+    tenant_id_str = user.get("tenant_id") or ""
+    if not tenant_id_str:
+        raise HTTPException(status_code=400, detail="No tenant assigned to this account")
     return await get_manager_stats(
         db=db,
-        tenant_id=UUID(user["tenant_id"]),
+        tenant_id=UUID(tenant_id_str),
         property_id=property_id,
     )
 
@@ -60,8 +66,11 @@ async def staff_stats(
     user: dict = Depends(get_current_user),
 ):
     """Staff dashboard stats — scoped to the logged-in user only."""
+    tenant_id_str = user.get("tenant_id") or ""
+    if not tenant_id_str:
+        raise HTTPException(status_code=400, detail="No tenant assigned to this account")
     return await get_staff_stats(
         db=db,
-        tenant_id=UUID(user["tenant_id"]),
+        tenant_id=UUID(tenant_id_str),
         user_id=UUID(user["user_id"]),
     )

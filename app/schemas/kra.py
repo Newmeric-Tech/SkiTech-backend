@@ -143,6 +143,9 @@ class WeeklyKRAListResponse(BaseModel):
 # ==================== MONTHLY KRA SCHEMAS ====================
 
 class MonthlyKRABase(BaseModel):
+    revenue_amount: Optional[float] = Field(None, ge=0, description="Total revenue for the month")
+    guest_count: Optional[int] = Field(None, ge=0, description="Total guests for the month")
+    occupancy_rate: Optional[float] = Field(None, ge=0, le=100, description="Occupancy rate percentage")
     revenue_report_url: Optional[str] = Field(None, description="S3 URL for revenue report file")
     notes: Optional[str] = None
 
@@ -188,6 +191,7 @@ class MonthlyKRAListResponse(BaseModel):
     month: int
     year: int
     is_submitted: bool
+    revenue_amount: Optional[float]
     revenue_report_url: Optional[str]
     created_at: datetime
 
@@ -198,6 +202,9 @@ class MonthlyKRAListResponse(BaseModel):
 # ==================== QUARTERLY KRA SCHEMAS ====================
 
 class QuarterlyKRABase(BaseModel):
+    revenue_amount: Optional[float] = Field(None, ge=0, description="Total revenue for the quarter")
+    guest_count: Optional[int] = Field(None, ge=0, description="Total guests for the quarter")
+    occupancy_rate: Optional[float] = Field(None, ge=0, le=100, description="Average occupancy rate percentage")
     revenue_report_url: Optional[str] = Field(None, description="S3 URL for revenue report file")
     notes: Optional[str] = None
 
@@ -246,6 +253,7 @@ class QuarterlyKRAListResponse(BaseModel):
     quarter: int
     year: int
     is_submitted: bool
+    revenue_amount: Optional[float]
     revenue_report_url: Optional[str]
     created_at: datetime
 
