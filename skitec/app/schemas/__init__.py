@@ -11,6 +11,51 @@ from .common import (
     SuccessResponse,
     TimestampedModel,
 )
+from .chat import (
+    # Enums
+    ConversationTypeEnum,
+    MessageTypeEnum,
+    ParticipantRoleEnum,
+    MessageStatusEnum,
+    UserPresenceStatusEnum,
+    WSMessageTypeEnum,
+    # Participant
+    ParticipantCreate,
+    ParticipantResponse,
+    ParticipantUpdate,
+    # Media
+    MediaResponse,
+    FileUploadResponse,
+    # Message
+    MessageCreate,
+    MessageResponse,
+    MessageDetailResponse,
+    MessageListResponse,
+    MessageUpdate,
+    ReadReceiptResponse,
+    # Conversation
+    ConversationCreate,
+    ConversationResponse,
+    ConversationDetailResponse,
+    ConversationListResponse,
+    ConversationUpdate,
+    # Search
+    SearchConversationsRequest,
+    SearchMessagesRequest,
+    # WebSocket
+    WSMessage,
+    WSSendMessage,
+    WSReadMessage,
+    WSTypingStart,
+    WSTypingStop,
+    WSUserOnline,
+    WSUserOffline,
+    WSMessageReceived,
+    # Presence
+    UserPresenceResponse,
+    # Notifications
+    ChatNotificationResponse,
+)
 from .governance import (
     GovernanceWorkflowCreate,
     GovernanceWorkflowResponse,
@@ -68,6 +113,49 @@ __all__ = [
     "TimestampedModel",
     "ErrorResponse",
     "SuccessResponse",
+    # Chat - Enums
+    "ConversationTypeEnum",
+    "MessageTypeEnum",
+    "ParticipantRoleEnum",
+    "MessageStatusEnum",
+    "UserPresenceStatusEnum",
+    "WSMessageTypeEnum",
+    # Chat - Participant
+    "ParticipantCreate",
+    "ParticipantResponse",
+    "ParticipantUpdate",
+    # Chat - Media
+    "MediaResponse",
+    "FileUploadResponse",
+    # Chat - Message
+    "MessageCreate",
+    "MessageResponse",
+    "MessageDetailResponse",
+    "MessageListResponse",
+    "MessageUpdate",
+    "ReadReceiptResponse",
+    # Chat - Conversation
+    "ConversationCreate",
+    "ConversationResponse",
+    "ConversationDetailResponse",
+    "ConversationListResponse",
+    "ConversationUpdate",
+    # Chat - Search
+    "SearchConversationsRequest",
+    "SearchMessagesRequest",
+    # Chat - WebSocket
+    "WSMessage",
+    "WSSendMessage",
+    "WSReadMessage",
+    "WSTypingStart",
+    "WSTypingStop",
+    "WSUserOnline",
+    "WSUserOffline",
+    "WSMessageReceived",
+    # Chat - Presence
+    "UserPresenceResponse",
+    # Chat - Notifications
+    "ChatNotificationResponse",
     # User
     "UserCreate",
     "UserResponse",

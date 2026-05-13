@@ -4,7 +4,7 @@ Endpoints Module - Initialization
 
 from . import (
     attendance, auth, governance, properties, reports, users, workforce,
-    department, employee, inventory, owner, sop, vendor, kra
+    department, employee, inventory, owner, sop, vendor, kra, chat
 )
 
 __all__ = [
@@ -22,4 +22,5 @@ __all__ = [
     "sop",
     "vendor",
     "kra",
+    "chat",
 ]

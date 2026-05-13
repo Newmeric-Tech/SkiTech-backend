@@ -7,6 +7,7 @@ Exports all service classes for dependency injection.
 from .attendance_service import AttendanceService, GeofenceService
 from .audit_service import AuditService
 from .auth_service import AuthService
+from .chat_service import ConversationService, MessageService
 from .governance_service import GovernanceService
 from .kra_service import DailyKRAService, WeeklyKRAService
 from .property_service import PropertyService
@@ -24,4 +25,6 @@ __all__ = [
     "WeeklyKRAService",
     "AttendanceService",
     "GeofenceService",
+    "ConversationService",
+    "MessageService",
 ]

@@ -9,9 +9,9 @@ from fastapi import APIRouter
 
 from .endpoints import (
     auth, governance, properties, reports, users, workforce,
-    department, employee, inventory, owner, sop, vendor, kra, attendance
+    department, employee, inventory, owner, sop, vendor, kra, attendance, chat
 )
-from . import vendor_owner_department_routes
+from . import vendor_owner_department_routes, ws_chat
 
 # Create main v1 router
 router = APIRouter(prefix="/v1")
@@ -31,6 +31,10 @@ router.include_router(sop.router)
 router.include_router(vendor.router)
 router.include_router(kra.router)
 router.include_router(attendance.router)
+router.include_router(chat.router)
 router.include_router(vendor_owner_department_routes.router)
+
+# Include WebSocket router
+router.include_router(ws_chat.router)
 
 __all__ = ["router"]

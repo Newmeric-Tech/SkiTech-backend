@@ -8,6 +8,21 @@ Ensures all models are registered with the declarative base.
 from .attendance import AttendanceRecord, PropertyGeofence
 from .audit import AuditLog
 from .base import Base, IdMixin, SoftDeleteMixin, TimestampMixin
+from .chat import (
+    Conversation,
+    ConversationParticipant,
+    Message,
+    MessageMedia,
+    MessageReadReceipt,
+    UserPresence,
+    TypingIndicator,
+    ChatNotification,
+    ConversationType,
+    MessageType,
+    ParticipantRole,
+    MessageStatus,
+    UserPresenceStatus,
+)
 from .governance import GovernanceWorkflow, WorkflowInstance
 from .kra import DailyKRA, WeeklyKRA
 from .property import Property
@@ -29,4 +44,18 @@ __all__ = [
     "WeeklyKRA",
     "AttendanceRecord",
     "PropertyGeofence",
+    # Chat models
+    "Conversation",
+    "ConversationParticipant",
+    "Message",
+    "MessageMedia",
+    "MessageReadReceipt",
+    "UserPresence",
+    "TypingIndicator",
+    "ChatNotification",
+    "ConversationType",
+    "MessageType",
+    "ParticipantRole",
+    "MessageStatus",
+    "UserPresenceStatus",
 ]
