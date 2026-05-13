@@ -94,3 +94,5 @@ alembic/versions/__pycache__/
 # PyInstaller
 *.manifest
 *.spec
+
+docs/

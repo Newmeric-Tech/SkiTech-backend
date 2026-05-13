@@ -2,12 +2,14 @@
 API v1 Router - app/api/v1/router.py
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.dependencies import require_feature
 from app.api.v1.endpoints import (
     auth, governance, inventory,
     properties, sop, workforce, users, stats, reports, rooms,
     kra, attendance, department, employee, vendor, owner, superadmin, dashboard,
+    subscriptions,
 )
 from app.api.v1 import vendor_owner_department_routes
 
@@ -21,6 +23,7 @@ router.include_router(stats.router)
 router.include_router(reports.router)
 router.include_router(rooms.router)
 router.include_router(properties.router)
+router.include_router(subscriptions.router)
 
 # Workforce (existing combined)
 router.include_router(workforce.dept_router)
@@ -33,8 +36,11 @@ router.include_router(employee.router)
 router.include_router(vendor.router)
 router.include_router(owner.router)
 
-# Operations
-router.include_router(inventory.router)
+# Operations — inventory is feature-gated by subscription plan
+router.include_router(
+    inventory.router,
+    dependencies=[Depends(require_feature("inventory"))],
+)
 router.include_router(sop.router)
 router.include_router(governance.router)
 

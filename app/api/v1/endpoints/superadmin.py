@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.models import (
-    AuditLog, Property, Role, RolePermission, User,
+    AuditLog, DemoRequest, Property, Role, RolePermission, User,
 )
 
 router = APIRouter(prefix="/superadmin", tags=["Superadmin"])
@@ -689,15 +689,50 @@ async def update_user_role(
 async def list_demo_requests(
     search: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
-    return []
+    q = select(DemoRequest).order_by(DemoRequest.created_at.desc())
+    if status:
+        q = q.where(DemoRequest.status == status)
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(
+            DemoRequest.name.ilike(term),
+            DemoRequest.email.ilike(term),
+            DemoRequest.company.ilike(term),
+        ))
+    rows = (await db.execute(q)).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "email": r.email,
+            "company": r.company,
+            "phone": r.phone,
+            "portfolio_size": r.portfolio_size,
+            "role": r.role,
+            "message": r.message,
+            "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
 
 
 @router.put("/demo-requests/{request_id}/status")
 async def update_demo_status(
     request_id: str,
     data: dict,
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
-    raise HTTPException(status_code=404, detail="Demo request not found")
+    from uuid import UUID as _UUID
+    row = (await db.execute(
+        select(DemoRequest).where(DemoRequest.id == _UUID(request_id))
+    )).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Demo request not found")
+    row.status = data.get("status", row.status)
+    await db.commit()
+    return {"success": True, "status": row.status}

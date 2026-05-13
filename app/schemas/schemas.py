@@ -87,6 +87,7 @@ class PropertyCreate(BaseModel):
     postal_code: Optional[str] = None
     franchise_type: Optional[str] = "owner-operated"
     num_rooms: Optional[int] = None
+    room_number_start: Optional[int] = 101
     has_restaurant: Optional[bool] = False
 
 
@@ -99,6 +100,7 @@ class PropertyUpdate(BaseModel):
     postal_code: Optional[str] = None
     franchise_type: Optional[str] = None
     num_rooms: Optional[int] = None
+    room_number_start: Optional[int] = None
     has_restaurant: Optional[bool] = None
     is_active: Optional[bool] = None
 
@@ -114,6 +116,7 @@ class PropertyResponse(BaseModel):
     postal_code: Optional[str]
     franchise_type: Optional[str]
     num_rooms: Optional[int]
+    room_number_start: Optional[int]
     has_restaurant: Optional[bool]
     is_active: bool
     created_at: datetime

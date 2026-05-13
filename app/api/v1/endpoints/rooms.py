@@ -23,16 +23,21 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from decimal import Decimal
 
 from app.api.dependencies import get_current_user, require_permission, require_roles
 from app.core.database import get_db
-from app.models.models import Booking, Room
+from app.models.models import Booking, Property, Room
 from app.schemas.schemas import (
     BookingCreate, BookingResponse, BookingUpdate,
     RoomCreate, RoomResponse, RoomUpdate,
 )
+
+ROOM_TYPES = ["Standard", "Deluxe", "Suite", "Executive", "Standard"]
+ROOM_PRICES = {"Standard": Decimal("2500"), "Deluxe": Decimal("4500"), "Suite": Decimal("8000"), "Executive": Decimal("6000")}
 
 router = APIRouter(prefix="/rooms", tags=["Rooms & Bookings"])
 
@@ -170,6 +175,92 @@ async def delete_room(
     room.deleted_at = datetime.utcnow()
     await db.commit()
     return {"message": "Room deleted successfully"}
+
+
+# ── Regenerate Rooms ──────────────────────────────────────────────────────────
+
+@router.post("/{property_id}/regenerate", response_model=List[RoomResponse])
+async def regenerate_rooms(
+    property_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
+):
+    """
+    Delete all existing rooms for this property and recreate them fresh using
+    the property's current num_rooms and room_number_start values.
+
+    Blocked if any room has an active booking (booked or checked_in).
+    Only Tenant Admin and Super Admin can call this.
+    """
+    tenant_id = UUID(user["tenant_id"])
+
+    # Load property
+    prop_result = await db.execute(
+        select(Property).where(
+            Property.id == property_id,
+            Property.tenant_id == tenant_id,
+            Property.deleted_at == None,
+        )
+    )
+    prop = prop_result.scalar_one_or_none()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    if not prop.num_rooms or prop.num_rooms <= 0:
+        raise HTTPException(status_code=400, detail="Property has no num_rooms set. Update the property first.")
+
+    # Block if active bookings exist for any room in this property
+    active_bookings = (await db.execute(
+        select(func.count(Booking.id)).where(
+            Booking.property_id == property_id,
+            Booking.tenant_id == tenant_id,
+            Booking.status.in_(["booked", "checked_in"]),
+            Booking.deleted_at == None,
+        )
+    )).scalar() or 0
+
+    if active_bookings > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot regenerate — {active_bookings} active booking(s) exist. Check out or cancel them first.",
+        )
+
+    # Soft-delete all existing rooms for this property
+    existing_rooms = (await db.execute(
+        select(Room).where(
+            Room.property_id == property_id,
+            Room.tenant_id == tenant_id,
+            Room.deleted_at == None,
+        )
+    )).scalars().all()
+
+    now = datetime.utcnow()
+    for room in existing_rooms:
+        room.deleted_at = now
+
+    await db.flush()
+
+    # Recreate rooms from scratch
+    start = prop.room_number_start if prop.room_number_start else 101
+    new_rooms = []
+    for i in range(prop.num_rooms):
+        room_type = ROOM_TYPES[i % len(ROOM_TYPES)]
+        room = Room(
+            tenant_id=tenant_id,
+            property_id=property_id,
+            room_number=str(start + i),
+            room_type=room_type,
+            price_per_night=ROOM_PRICES.get(room_type, Decimal("2500")),
+            status="available",
+        )
+        db.add(room)
+        new_rooms.append(room)
+
+    await db.commit()
+    for r in new_rooms:
+        await db.refresh(r)
+
+    return new_rooms
 
 
 # ── Bookings ──────────────────────────────────────────────────────────────────

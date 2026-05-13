@@ -4,12 +4,14 @@ FastAPI Dependencies - app/api/dependencies.py
 JWT authentication + permission/role checking.
 """
 
-import uuid
-from typing import Optional
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
 from app.core.security import decode_token, has_permission
 
 security = HTTPBearer()
@@ -63,3 +65,49 @@ def require_roles(roles: list):
             )
         return user
     return checker
+
+
+def require_feature(feature_name: str):
+    """Route dependency: enforce that tenant's active plan includes a feature. Super Admin bypasses."""
+    async def checker(
+        user: dict = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> dict:
+        # Super Admin has unrestricted access
+        if user.get("role") == "Super Admin":
+            return user
+
+        from app.models.models import SubscriptionPlan, TenantSubscription
+        tenant_id = UUID(user["tenant_id"])
+
+        sub_result = await db.execute(
+            select(TenantSubscription)
+            .where(
+                TenantSubscription.tenant_id == tenant_id,
+                TenantSubscription.status == "active",
+            )
+            .order_by(TenantSubscription.created_at.desc())
+            .limit(1)
+        )
+        sub = sub_result.scalar_one_or_none()
+        if not sub:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No active subscription. Please contact your administrator.",
+            )
+
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == sub.plan_id)
+        )
+        plan = plan_result.scalar_one_or_none()
+        features = (plan.features or {}) if plan else {}
+
+        if not features.get(feature_name, False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Feature '{feature_name}' is not included in your subscription plan. Please upgrade.",
+            )
+        return user
+    return checker
+
+

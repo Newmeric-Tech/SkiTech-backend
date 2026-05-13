@@ -22,7 +22,7 @@ from app.core.security import (
     create_access_token, create_refresh_token, decode_token,
     hash_password, verify_password,
 )
-from app.models.models import User, Role
+from app.models.models import DemoRequest, User, Role
 from app.schemas.schemas import (
     LoginRequest, OTPVerifyRequest, PasswordResetConfirm,
     PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse, SuperAdminLoginRequest
@@ -317,3 +317,24 @@ async def reset_password(data: PasswordResetConfirm, db: AsyncSession = Depends(
 async def logout():
     """Logout (JWT is stateless — client discards the token)."""
     return {"message": "Logged out successfully."}
+
+
+@router.post("/demo-request", status_code=201)
+async def submit_demo_request(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public endpoint — no auth required. Saves a demo request from the landing page."""
+    row = DemoRequest(
+        name=data.get("name", ""),
+        email=data.get("email", ""),
+        company=data.get("company"),
+        phone=data.get("phone"),
+        portfolio_size=data.get("size"),
+        role=data.get("role"),
+        message=data.get("message"),
+        status="pending",
+    )
+    db.add(row)
+    await db.commit()
+    return {"success": True, "message": "Demo request received"}

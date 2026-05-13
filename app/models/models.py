@@ -170,6 +170,7 @@ class Property(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     # Extended fields (from SkiTech-Nupur)
     franchise_type = Column(String(50), default="owner-operated")
     num_rooms = Column(Integer)
+    room_number_start = Column(Integer, default=101, nullable=True)
     has_restaurant = Column(Boolean, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
 
@@ -643,6 +644,19 @@ class WorkflowInstance(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 # ===========================================================
 # AUDIT LOG
 # ===========================================================
+
+class DemoRequest(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "demo_requests"
+
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=False, index=True)
+    company = Column(String(255))
+    phone = Column(String(50))
+    portfolio_size = Column(String(100))
+    role = Column(String(100))
+    message = Column(Text)
+    status = Column(String(50), default="pending", index=True)  # pending / contacted / completed
+
 
 class AuditLog(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "audit_logs"
