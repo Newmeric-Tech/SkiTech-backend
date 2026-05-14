@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.schemas.attendance import (
     PunchInRequest, PunchOutRequest, AttendanceRecordResponse,
     PunchInResponse, PunchOutResponse, PropertyGeofenceCreate,
-    PropertyGeofenceResponse, GeolocationHistoryFilter,
+    PropertyGeofenceResponse, GeolocationHistoryFilter, CurrentStatusUpdate,
 )
 from app.services.attendance_service import AttendanceService, GeofenceService
 
@@ -106,10 +106,43 @@ async def get_punch_status(
             "punch_in_time": attendance.punch_in_time,
             "hours_so_far": round(duration.total_seconds() / 3600, 2),
             "is_within_fence": attendance.is_within_fence,
+            "current_status": attendance.current_status,
             "punch_in_location": {"latitude": attendance.punch_in_lat, "longitude": attendance.punch_in_lon},
         }
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error fetching punch status")
+
+
+@router.patch("/current-status")
+async def update_current_status(
+    body: CurrentStatusUpdate,
+    property_id: str = Query(..., description="Property ID (UUID)"),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> Any:
+    try:
+        attendance = await AttendanceService.get_active_punch_in(
+            db=db,
+            user_id=user["user_id"],
+            property_id=property_id,
+            tenant_id=user["tenant_id"],
+        )
+        if not attendance:
+            if body.current_status is None:
+                return {"success": True, "current_status": None, "message": "Status cleared"}
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active punch in found")
+        attendance.current_status = body.current_status
+        await db.commit()
+        await db.refresh(attendance)
+        return {
+            "success": True,
+            "current_status": attendance.current_status,
+            "message": "Status cleared" if not body.current_status else f"Status updated to: {body.current_status}",
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error updating status")
 
 
 # ===========================
@@ -256,25 +289,55 @@ async def get_property_attendance_today(
     user: dict = Depends(require_permission("manage_staff")),
 ) -> Any:
     try:
+        from uuid import UUID as PyUUID
+        from sqlalchemy import select, func as sqlfunc
+        from app.models.models import User as UserModel
+
         records = await AttendanceService.get_property_attendance_today(
             db=db, property_id=property_id, tenant_id=user["tenant_id"]
         )
-        today_str = __import__("datetime").date.today().isoformat()
+
+        # Resolve user names for all punched-in users
+        user_ids = list({r.user_id for r in records})
+        user_name_map: dict = {}
+        if user_ids:
+            users_result = await db.execute(
+                select(UserModel.id, UserModel.first_name, UserModel.last_name)
+                .where(UserModel.id.in_(user_ids))
+            )
+            for row in users_result:
+                full = " ".join(filter(None, [row.first_name, row.last_name])) or str(row.id)
+                user_name_map[row.id] = full
+
+        # Count all active staff assigned to this property for the absent calculation
+        prop_uuid = PyUUID(property_id)
+        tenant_uuid = PyUUID(user["tenant_id"])
+        staff_count_result = await db.execute(
+            select(sqlfunc.count()).select_from(UserModel).where(
+                UserModel.property_id == prop_uuid,
+                UserModel.tenant_id == tenant_uuid,
+                UserModel.is_active == True,
+            )
+        )
+        total_staff = staff_count_result.scalar() or len(records)
+
+        today_str = datetime.now(timezone.utc).date().isoformat()
         present = [r for r in records if r.status in ("active", "completed")]
         return {
             "property_id": property_id,
             "date": today_str,
-            "total_staff": len(records),
+            "total_staff": total_staff,
             "present": len(present),
-            "absent": 0,
+            "absent": max(0, total_staff - len(present)),
             "records": [
                 {
                     "user_id": str(r.user_id),
-                    "user_name": str(r.user_id),
+                    "user_name": user_name_map.get(r.user_id, str(r.user_id)),
                     "punch_in_time": r.punch_in_time.isoformat() if r.punch_in_time else None,
                     "punch_out_time": r.punch_out_time.isoformat() if r.punch_out_time else None,
                     "hours_worked": r.hours_worked,
                     "status": r.status,
+                    "current_status": r.current_status,
                     "is_within_fence": r.is_within_fence,
                 }
                 for r in records
@@ -282,6 +345,53 @@ async def get_property_attendance_today(
         }
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error fetching property attendance")
+
+
+@router.get("/property/{property_id}/week")
+async def get_property_attendance_week(
+    property_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("manage_staff")),
+) -> Any:
+    try:
+        from uuid import UUID as PyUUID
+        from sqlalchemy import select
+        from app.models.models import User as UserModel
+
+        records = await AttendanceService.get_property_attendance_week(
+            db=db, property_id=property_id, tenant_id=user["tenant_id"]
+        )
+
+        user_ids = list({r.user_id for r in records})
+        user_name_map: dict = {}
+        if user_ids:
+            users_result = await db.execute(
+                select(UserModel.id, UserModel.first_name, UserModel.last_name)
+                .where(UserModel.id.in_(user_ids))
+            )
+            for row in users_result:
+                full = " ".join(filter(None, [row.first_name, row.last_name])) or str(row.id)
+                user_name_map[row.id] = full
+
+        return {
+            "property_id": property_id,
+            "records": [
+                {
+                    "id": str(r.id),
+                    "user_id": str(r.user_id),
+                    "user_name": user_name_map.get(r.user_id, str(r.user_id)),
+                    "punch_in_time": r.punch_in_time.isoformat() if r.punch_in_time else None,
+                    "punch_out_time": r.punch_out_time.isoformat() if r.punch_out_time else None,
+                    "hours_worked": r.hours_worked,
+                    "status": r.status,
+                    "current_status": r.current_status,
+                    "is_within_fence": r.is_within_fence,
+                }
+                for r in records
+            ],
+        }
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error fetching weekly attendance")
 
 
 @router.get("/geofence")

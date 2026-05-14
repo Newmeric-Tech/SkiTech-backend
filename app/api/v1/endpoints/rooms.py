@@ -23,6 +23,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +37,12 @@ from app.schemas.schemas import (
     RoomCreate, RoomResponse, RoomUpdate,
 )
 
-ROOM_TYPES = ["Standard", "Deluxe", "Suite", "Executive", "Standard"]
+ROOM_TYPES = ["Standard", "Deluxe", "Suite", "Executive"]
+
+
+class BulkStatusUpdate(BaseModel):
+    room_ids: List[str]
+    status: str
 ROOM_PRICES = {"Standard": Decimal("2500"), "Deluxe": Decimal("4500"), "Suite": Decimal("8000"), "Executive": Decimal("6000")}
 
 router = APIRouter(prefix="/rooms", tags=["Rooms & Bookings"])
@@ -175,6 +181,37 @@ async def delete_room(
     room.deleted_at = datetime.utcnow()
     await db.commit()
     return {"message": "Room deleted successfully"}
+
+
+# ── Bulk Status Update ───────────────────────────────────────────────────────
+
+@router.post("/{property_id}/bulk-status")
+async def bulk_update_room_status(
+    property_id: UUID,
+    data: BulkStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_roles(["Super Admin", "Tenant Admin", "Manager"])),
+):
+    """Update status of multiple rooms at once."""
+    if data.status not in ["available", "occupied", "maintenance"]:
+        raise HTTPException(status_code=400, detail="Invalid status. Must be available, occupied, or maintenance")
+
+    tenant_id = UUID(user["tenant_id"])
+    room_uuids = [UUID(rid) for rid in data.room_ids]
+
+    result = await db.execute(
+        select(Room).where(
+            Room.id.in_(room_uuids),
+            Room.property_id == property_id,
+            Room.tenant_id == tenant_id,
+            Room.deleted_at == None,
+        )
+    )
+    rooms = result.scalars().all()
+    for room in rooms:
+        room.status = data.status
+    await db.commit()
+    return {"updated": len(rooms), "status": data.status}
 
 
 # ── Regenerate Rooms ──────────────────────────────────────────────────────────

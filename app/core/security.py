@@ -52,7 +52,7 @@ def decode_token(token: str) -> Optional[dict]:
 ROLE_PERMISSIONS: dict[str, list[str]] = {
     "Super Admin": [
         "manage_all",
-        "manage_property", "manage_staff",
+        "manage_property", "view_property", "manage_staff",
         "view_sop", "create_sop", "update_sop", "delete_sop",
         "view_inventory", "manage_inventory",
         "view_vendor", "create_vendor", "update_vendor", "delete_vendor",
@@ -60,7 +60,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "view_department", "create_department", "update_department", "delete_department",
     ],
     "Tenant Admin": [
-        "manage_property", "manage_staff",
+        "manage_property", "view_property", "manage_staff",
         "view_sop", "create_sop", "update_sop", "delete_sop",
         "view_inventory", "manage_inventory",
         "view_vendor", "create_vendor", "update_vendor", "delete_vendor",
@@ -69,12 +69,14 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
     "Manager": [
         "manage_staff",
+        "view_property",
         "view_sop", "create_sop", "update_sop",
         "view_inventory",
         "view_vendor",
         "view_department", "create_department", "update_department",
     ],
     "Staff": [
+        "view_property",
         "view_sop",
         "view_inventory",
         "view_department",

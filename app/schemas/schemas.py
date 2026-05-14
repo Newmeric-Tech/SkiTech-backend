@@ -89,6 +89,7 @@ class PropertyCreate(BaseModel):
     num_rooms: Optional[int] = None
     room_number_start: Optional[int] = 101
     has_restaurant: Optional[bool] = False
+    image_urls: Optional[List[str]] = None
 
 
 class PropertyUpdate(BaseModel):
@@ -103,6 +104,7 @@ class PropertyUpdate(BaseModel):
     room_number_start: Optional[int] = None
     has_restaurant: Optional[bool] = None
     is_active: Optional[bool] = None
+    image_urls: Optional[List[str]] = None
 
 
 class PropertyResponse(BaseModel):
@@ -119,6 +121,7 @@ class PropertyResponse(BaseModel):
     room_number_start: Optional[int]
     has_restaurant: Optional[bool]
     is_active: bool
+    image_urls: Optional[List[str]] = None
     created_at: datetime
 
     class Config:

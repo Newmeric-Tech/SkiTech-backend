@@ -173,6 +173,7 @@ class Property(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     room_number_start = Column(Integer, default=101, nullable=True)
     has_restaurant = Column(Boolean, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    image_urls = Column(JSONB, nullable=True, default=list)
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_tenant_property_name"),

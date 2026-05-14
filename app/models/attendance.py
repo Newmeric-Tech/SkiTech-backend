@@ -14,13 +14,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base
+from .base import Base, UUIDMixin, TimestampMixin
 
 
-class AttendanceRecord(Base):
+class AttendanceRecord(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "attendance_records"
 
-    id: Mapped[UUID] = mapped_column(SQLUUID, primary_key=True, index=True)
     tenant_id: Mapped[UUID] = mapped_column(
         SQLUUID, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -46,6 +45,7 @@ class AttendanceRecord(Base):
     hours_worked: Mapped[Optional[float]] = mapped_column(Float(precision=5), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False, index=True)
+    current_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -56,7 +56,7 @@ class AttendanceRecord(Base):
     )
 
 
-class PropertyGeofence(Base):
+class PropertyGeofence(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "property_geofences"
 
     id: Mapped[UUID] = mapped_column(SQLUUID, primary_key=True, index=True)

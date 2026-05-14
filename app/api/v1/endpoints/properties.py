@@ -5,15 +5,21 @@ Full CRUD for Properties + nested OwnerDetails.
 Tenant isolation enforced via JWT tenant_id.
 """
 
+import shutil
+import uuid as uuid_lib
 from datetime import datetime
+from pathlib import Path
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import boto3
+from botocore.exceptions import ClientError
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_permission
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import OwnerDetails, Property
 from app.schemas.schemas import (
@@ -76,7 +82,7 @@ async def list_properties(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_permission("manage_property")),
+    user: dict = Depends(require_permission("view_property")),
 ):
     tenant_id = UUID(user["tenant_id"])
     result = await db.execute(
@@ -92,7 +98,7 @@ async def list_properties(
 async def get_property(
     property_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_permission("manage_property")),
+    user: dict = Depends(require_permission("view_property")),
 ):
     return await _get_property_or_404(db, property_id, UUID(user["tenant_id"]))
 
@@ -184,3 +190,89 @@ async def update_owner(
     await db.commit()
     await db.refresh(owner)
     return owner
+
+
+# ── Property Image Upload ──────────────────────────────────
+
+@router.get("/{property_id}/images/upload-url")
+async def get_property_image_upload_url(
+    property_id: UUID,
+    filename: str = Query(...),
+    file_type: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("manage_property")),
+):
+    """Generate a pre-signed S3 PUT URL for uploading a property image."""
+    if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_SECRET_ACCESS_KEY:
+        raise HTTPException(status_code=503, detail="S3 upload is not configured on this server")
+
+    await _get_property_or_404(db, property_id, UUID(user["tenant_id"]))
+
+    tenant_id = user["tenant_id"]
+    object_key = f"{tenant_id}/properties/{property_id}/{filename}"
+
+    try:
+        s3 = boto3.client(
+            "s3",
+            region_name=settings.AWS_REGION,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        )
+        presigned_url = s3.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": settings.S3_PROPERTY_IMAGES_BUCKET, "Key": object_key, "ContentType": file_type},
+            ExpiresIn=3600,
+        )
+        public_url = f"https://{settings.S3_PROPERTY_IMAGES_BUCKET}.s3.{settings.AWS_REGION}.amazonaws.com/{object_key}"
+        return {"upload_url": presigned_url, "file_key": object_key, "public_url": public_url}
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+LOCAL_UPLOAD_DIR = Path("uploads/property_images")
+
+
+@router.post("/{property_id}/images/upload")
+async def upload_property_image(
+    property_id: UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("manage_property")),
+):
+    """Upload a property image. Uses S3 when configured, otherwise saves locally."""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, and WEBP images are allowed")
+
+    await _get_property_or_404(db, property_id, UUID(user["tenant_id"]))
+    tenant_id = user["tenant_id"]
+
+    # Try S3 first if credentials exist
+    if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+        try:
+            ext = (file.filename or "image").rsplit(".", 1)[-1].lower()
+            object_key = f"{tenant_id}/properties/{property_id}/{uuid_lib.uuid4().hex}.{ext}"
+            s3 = boto3.client(
+                "s3",
+                region_name=settings.AWS_REGION,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            )
+            s3.upload_fileobj(file.file, settings.S3_PROPERTY_IMAGES_BUCKET, object_key,
+                              ExtraArgs={"ContentType": file.content_type})
+            url = f"https://{settings.S3_PROPERTY_IMAGES_BUCKET}.s3.{settings.AWS_REGION}.amazonaws.com/{object_key}"
+            return {"url": url, "storage": "s3"}
+        except Exception:
+            pass  # fall through to local storage
+
+    # Local fallback
+    save_dir = LOCAL_UPLOAD_DIR / tenant_id / str(property_id)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    ext = (file.filename or "image").rsplit(".", 1)[-1].lower() or "jpg"
+    filename = f"{uuid_lib.uuid4().hex}.{ext}"
+    save_path = save_dir / filename
+    with save_path.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    url = f"{settings.BACKEND_URL}/uploads/property_images/{tenant_id}/{property_id}/{filename}"
+    return {"url": url, "storage": "local"}

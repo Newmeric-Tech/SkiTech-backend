@@ -8,10 +8,13 @@ Run with:
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import router as v1_router
 from app.core.config import settings
@@ -38,6 +41,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database tables initialized")
     except Exception as e:
         logger.warning(f"DB init skipped: {e}")
+    Path("uploads/property_images").mkdir(parents=True, exist_ok=True)
     yield
     await close_db()
     logger.info("Shutdown complete")
@@ -67,6 +71,10 @@ app.add_middleware(ErrorHandlerMiddleware)
 app.add_middleware(TenantIsolationMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(LoggingMiddleware)
+
+# ── Static files (local image storage fallback) ───────────
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # ── Routers ───────────────────────────────────────────────
 app.include_router(v1_router, prefix="/api")

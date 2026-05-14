@@ -6,6 +6,7 @@ Async SQLAlchemy engine, session management, and dependency injection.
 
 from typing import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -54,6 +55,15 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Idempotent column additions for existing tables
+        # (create_all skips tables that already exist, so new columns need ALTER TABLE)
+        migrations = [
+            "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS current_status VARCHAR(50);",
+            "ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb;",
+        ]
+        for sql in migrations:
+            await conn.execute(text(sql))
 
 
 async def close_db() -> None:

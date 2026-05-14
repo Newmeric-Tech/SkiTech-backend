@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     AWS_REGION: str = "us-east-1"
     S3_SOP_BUCKET: str = "skitech-sop-documents"
+    S3_PROPERTY_IMAGES_BUCKET: str = "skitech-property-images"
+    BACKEND_URL: str = "http://localhost:8000"
 
     # Logging
     LOG_LEVEL: str = "INFO"

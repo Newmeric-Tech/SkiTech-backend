@@ -55,12 +55,17 @@ class AttendanceRecordResponse(BaseModel):
     punch_out_lon: Optional[float] = None
     hours_worked: Optional[float] = None
     status: str
+    current_status: Optional[str] = None
     notes: Optional[str]
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class CurrentStatusUpdate(BaseModel):
+    current_status: Optional[str] = None
 
 
 class PunchInResponse(BaseModel):

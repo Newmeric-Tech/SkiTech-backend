@@ -250,6 +250,41 @@ class AttendanceService:
                 )
             ).order_by(AttendanceRecord.punch_in_time)
         )
+        all_records = list(result.scalars().all())
+
+        from collections import defaultdict
+        user_records: dict = defaultdict(list)
+        for r in all_records:
+            user_records[str(r.user_id)].append(r)
+
+        deduped = []
+        for recs in user_records.values():
+            active = [r for r in recs if r.status == "active"]
+            if active:
+                deduped.append(max(active, key=lambda r: r.punch_in_time))
+            else:
+                deduped.append(max(recs, key=lambda r: r.punch_in_time))
+
+        return sorted(deduped, key=lambda r: r.punch_in_time)
+
+    @staticmethod
+    async def get_property_attendance_week(
+        db: AsyncSession,
+        property_id: str,
+        tenant_id: str,
+    ) -> List[AttendanceRecord]:
+        start = datetime.now(timezone.utc) - timedelta(days=6)
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        result = await db.execute(
+            select(AttendanceRecord).where(
+                and_(
+                    AttendanceRecord.property_id == property_id,
+                    AttendanceRecord.tenant_id == tenant_id,
+                    AttendanceRecord.punch_in_time >= start,
+                )
+            ).order_by(AttendanceRecord.punch_in_time)
+        )
         return list(result.scalars().all())
 
 
