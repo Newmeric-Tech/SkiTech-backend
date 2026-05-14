@@ -57,7 +57,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS ─────────────────────────────────────────────────
+# ── Custom middleware (innermost → outermost) ────────────
+app.add_middleware(ErrorHandlerMiddleware)
+app.add_middleware(TenantIsolationMiddleware)
+app.add_middleware(AuditMiddleware)
+app.add_middleware(LoggingMiddleware)
+
+# ── CORS must be outermost so it handles OPTIONS preflight ─
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -65,12 +71,6 @@ app.add_middleware(
     allow_methods=settings.ALLOWED_METHODS,
     allow_headers=settings.ALLOWED_HEADERS,
 )
-
-# ── Custom middleware (outermost → innermost) ─────────────
-app.add_middleware(ErrorHandlerMiddleware)
-app.add_middleware(TenantIsolationMiddleware)
-app.add_middleware(AuditMiddleware)
-app.add_middleware(LoggingMiddleware)
 
 # ── Static files (local image storage fallback) ───────────
 os.makedirs("uploads", exist_ok=True)
