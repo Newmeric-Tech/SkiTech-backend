@@ -64,9 +64,19 @@ app.add_middleware(AuditMiddleware)
 app.add_middleware(LoggingMiddleware)
 
 # ── CORS must be outermost so it handles OPTIONS preflight ─
+# Always include these origins; merge with any extras from env var so that
+# an accidental or partial ALLOWED_ORIGINS env var can't block requests.
+_CORS_ORIGINS = list({
+    "https://skitech-iota.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:8080",
+    "http://localhost:5173",
+    *settings.ALLOWED_ORIGINS,
+})
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
