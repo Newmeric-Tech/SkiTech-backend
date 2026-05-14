@@ -137,66 +137,77 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     Authenticate and return JWT tokens.
     If expected_role is provided, validates that the user's actual role matches.
     """
-    result = await db.execute(
-        select(User).where(
-            User.email == data.email,
-            User.is_active == True,
-            User.deleted_at == None,
-        )
-    )
-    user = result.scalar_one_or_none()
- 
-    if not user or not verify_password(data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
- 
-    if not user.is_verified:
-        raise HTTPException(
-            status_code=403,
-            detail="Email not verified. Check your inbox for the OTP.",
-        )
- 
-    # Load actual role from DB
-    role_result = await db.execute(select(Role).where(Role.id == user.role_id))
-    role = role_result.scalar_one_or_none()
-    actual_role = role.name if role else "Staff"
- 
-    # ── Role validation ───────────────────────────────────────────────────────
-    if data.expected_role:
-        expected_db_role = ROLE_NAME_MAP.get(data.expected_role)
- 
-        if not expected_db_role:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown role selected: '{data.expected_role}'",
+    import logging as _logging
+    _log = _logging.getLogger("skitech")
+    try:
+        result = await db.execute(
+            select(User).where(
+                User.email == data.email,
+                User.is_active == True,
+                User.deleted_at.is_(None),
             )
- 
-        if actual_role != expected_db_role:
+        )
+        user = result.scalar_one_or_none()
+
+        if not user or not verify_password(data.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        if not user.is_verified:
             raise HTTPException(
                 status_code=403,
-                detail=f"Access denied. Your account is not registered as '{expected_db_role}'. "
-                       f"Please select the correct role.",
+                detail="Email not verified. Check your inbox for the OTP.",
             )
-    # ─────────────────────────────────────────────────────────────────────────
- 
-    # Update last login
-    user.last_login = datetime.utcnow()
-    await db.commit()
- 
-    payload = {
-        "sub": str(user.id),
-        "user_id": str(user.id),
-        "tenant_id": str(user.tenant_id) if user.tenant_id else "",
-        "property_id": str(user.property_id) if user.property_id else "",
-        "email": user.email,
-        "role": actual_role,
-        "first_name": user.first_name or "",
-        "last_name": user.last_name or "",
-    }
 
-    return TokenResponse(
-        access_token=create_access_token(payload),
-        refresh_token=create_refresh_token(payload),
-    )
+        # Load actual role from DB
+        role_result = await db.execute(select(Role).where(Role.id == user.role_id))
+        role = role_result.scalar_one_or_none()
+        actual_role = role.name if role else "Staff"
+
+        # ── Role validation ───────────────────────────────────────────────────────
+        if data.expected_role:
+            expected_db_role = ROLE_NAME_MAP.get(data.expected_role)
+
+            if not expected_db_role:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown role selected: '{data.expected_role}'",
+                )
+
+            if actual_role != expected_db_role:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied. Your account is not registered as '{expected_db_role}'. "
+                           f"Please select the correct role.",
+                )
+        # ─────────────────────────────────────────────────────────────────────────
+
+        # Update last login
+        user.last_login = datetime.utcnow()
+        await db.commit()
+
+        payload = {
+            "sub": str(user.id),
+            "user_id": str(user.id),
+            "tenant_id": str(user.tenant_id) if user.tenant_id else "",
+            "property_id": str(user.property_id) if user.property_id else "",
+            "email": user.email,
+            "role": actual_role,
+            "first_name": user.first_name or "",
+            "last_name": user.last_name or "",
+        }
+
+        return TokenResponse(
+            access_token=create_access_token(payload),
+            refresh_token=create_refresh_token(payload),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log.error(f"[LOGIN ERROR] {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Login error: {type(e).__name__}: {str(e)}"
+        )
 
 
 @router.post("/superadmin-login", response_model=TokenResponse)

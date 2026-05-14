@@ -83,9 +83,21 @@ app.include_router(v1_router, prefix="/api")
 
 @app.get("/health", tags=["Health"])
 async def health_check():
+    from app.core.database import engine
+    from sqlalchemy import text
+    db_status = "ok"
+    db_error = None
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = "error"
+        db_error = f"{type(e).__name__}: {str(e)}"
     return {
-        "status": "ok",
+        "status": "ok" if db_status == "ok" else "degraded",
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
+        "db": db_status,
+        **({"db_error": db_error} if db_error else {}),
     }
