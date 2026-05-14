@@ -63,24 +63,16 @@ app.add_middleware(TenantIsolationMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(LoggingMiddleware)
 
-# ── CORS must be outermost so it handles OPTIONS preflight ─
-# Always include these origins; merge with any extras from env var so that
-# an accidental or partial ALLOWED_ORIGINS env var can't block requests.
-_CORS_ORIGINS = list({
-    "https://skitech-iota.vercel.app",
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "http://localhost:8080",
-    "http://localhost:5173",
-    *settings.ALLOWED_ORIGINS,
-})
+# ── CORS — allow all origins ──────────────────────────────
+# Wildcard origin requires allow_credentials=False.
+# Auth is handled via JWT in the Authorization header (not cookies),
+# so credentials=False is correct and safe.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
 # ── Static files (local image storage fallback) ───────────
