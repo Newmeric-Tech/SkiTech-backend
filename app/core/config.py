@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # CORS
     ALLOWED_ORIGINS: List[str] = [
+        "https://skitech-iota.vercel.app",
         "http://localhost:3000",
         "http://localhost:8080",
         "http://localhost:5173",
