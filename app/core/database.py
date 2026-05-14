@@ -5,6 +5,7 @@ Async SQLAlchemy engine, session management, and dependency injection.
 """
 
 from typing import AsyncGenerator
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -12,16 +13,30 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
-# Build connection args - add SSL only for cloud databases
-connect_args = {}
-if "neon.tech" in settings.DATABASE_URL or settings.is_production:
+
+def _clean_db_url(url: str) -> str:
+    """Strip SSL query params from the URL — asyncpg gets ssl via connect_args."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    for key in ("sslmode", "ssl", "channel_binding"):
+        params.pop(key, None)
+    clean_query = urlencode({k: v[0] for k, v in params.items()})
+    return urlunparse(parsed._replace(query=clean_query))
+
+
+_is_cloud = "neon.tech" in settings.DATABASE_URL or settings.is_production
+
+connect_args: dict = {}
+if _is_cloud:
     connect_args = {
         "ssl": "require",
         "server_settings": {"application_name": "skitech"},
     }
 
+_db_url = _clean_db_url(settings.DATABASE_URL) if _is_cloud else settings.DATABASE_URL
+
 engine = create_async_engine(
-    url=settings.DATABASE_URL,
+    url=_db_url,
     echo=settings.DB_ECHO,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
