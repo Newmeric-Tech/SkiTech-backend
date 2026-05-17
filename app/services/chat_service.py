@@ -35,7 +35,7 @@ from app.repositories.chat_repository import (
 )
 from app.schemas.chat_schemas import (
     ConversationDetailResponse, ConversationListItem, MessageResponse,
-    ParticipantResponse, MessageInConversation, MessageMediaResponse
+    ParticipantResponse, MessageInConversation, MessageMediaResponse, UserInChat
 )
 from app.storage.base import get_storage
 from app.utils.exceptions import (
@@ -77,11 +77,22 @@ class ConversationService:
         # Convert to response
         items = []
         for conv in conversations:
+            other_participants = [
+                UserInChat(
+                    id=p.user.id,
+                    first_name=p.user.first_name or "",
+                    last_name=p.user.last_name or "",
+                    email=p.user.email
+                )
+                for p in conv.participants
+                if p.user_id != user_id and p.left_at is None and p.user is not None
+            ]
             item = ConversationListItem(
                 id=conv.id,
                 type=conv.type,
                 name=conv.name,
                 avatar_url=conv.avatar_url,
+                other_participants=other_participants,
                 participant_count=conv.participant_count,
                 unread_count=conv.unread_count,
                 is_archived=conv.is_archived,
@@ -166,8 +177,6 @@ class ConversationService:
         property_id: UUID
     ) -> ConversationDetailResponse:
         """Create or get direct conversation between two users"""
-        from app.schemas.chat_schemas import UserInChat
-
         # Verify both users exist and belong to property
         # TODO: Query users to verify they exist and belong to property
 
@@ -686,8 +695,6 @@ class MessageService:
         user_id: UUID
     ) -> MessageResponse:
         """Convert message to response"""
-        from app.schemas.chat_schemas import UserInChat
-
         # Get user's delivery status
         user_status = await self.status_repo.get_user_status(
             message_id=message.id,
@@ -832,6 +839,3 @@ class MediaService:
 
         return True
 
-
-# Helper import for UserInChat
-from app.schemas.chat_schemas import UserInChat

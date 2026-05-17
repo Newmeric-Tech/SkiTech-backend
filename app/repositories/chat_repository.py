@@ -118,7 +118,9 @@ class ConversationRepository:
         # Fetch paginated results, ordered by last activity
         stmt = (
             base_query
-            .options(selectinload(Conversation.participants))
+            .options(
+                selectinload(Conversation.participants).selectinload(ConversationParticipant.user)
+            )
             .order_by(desc(Conversation.last_message_at), desc(Conversation.created_at))
             .offset(skip)
             .limit(limit)

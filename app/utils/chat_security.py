@@ -196,7 +196,7 @@ async def verify_property_access(
 
     # User must belong to property or be super admin
     # For now, check if user.property_id matches
-    if user.property_id != property_id and not user.role_obj.name == "super_admin":
+    if user.property_id != property_id:
         raise AccessDenied("User does not have access to this property")
 
     return property_obj

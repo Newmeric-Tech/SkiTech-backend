@@ -60,6 +60,81 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 # ===========================================================
+# CONTACTS ENDPOINT
+# ===========================================================
+
+@router.get(
+    "/contacts",
+    response_model=List[UserInChat],
+    summary="Get chat contacts based on caller's role",
+)
+async def get_chat_contacts(
+    tenant_id: UUID = Query(...),
+    property_id: UUID = Query(...),
+    authorization: str = Header(...),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Returns users the caller is allowed to chat with, filtered by role:
+    - Tenant Admin: other Tenant Admins + Managers in same property
+    - Manager: Tenant Admins + Staff in same property
+    - Staff: Managers + Staff in same property
+    - Super Admin: everyone in property
+    """
+    from app.models.models import User as UserModel, Role as RoleModel
+    from sqlalchemy import select, and_
+
+    try:
+        security = await get_chat_security_context(authorization, tenant_id, property_id, session)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
+    # Determine caller's role name
+    role_stmt = (
+        select(RoleModel.name)
+        .join(UserModel, UserModel.role_id == RoleModel.id)
+        .where(UserModel.id == security.user_id)
+    )
+    role_result = await session.execute(role_stmt)
+    current_role = role_result.scalar_one_or_none() or ""
+
+    role_map = {
+        "Tenant Admin": ["Tenant Admin", "Manager"],
+        "Manager":      ["Tenant Admin", "Staff"],
+        "Staff":        ["Manager", "Staff"],
+    }
+    allowed_roles = role_map.get(current_role, ["Tenant Admin", "Manager", "Staff"])
+
+    stmt = (
+        select(UserModel)
+        .join(RoleModel, UserModel.role_id == RoleModel.id)
+        .where(
+            and_(
+                UserModel.tenant_id == tenant_id,
+                UserModel.property_id == property_id,
+                UserModel.is_active.is_(True),
+                UserModel.deleted_at.is_(None),
+                UserModel.id != security.user_id,
+                RoleModel.name.in_(allowed_roles),
+            )
+        )
+        .order_by(UserModel.first_name, UserModel.last_name)
+    )
+    result = await session.execute(stmt)
+    users = result.scalars().all()
+
+    return [
+        UserInChat(
+            id=u.id,
+            first_name=u.first_name or "",
+            last_name=u.last_name or "",
+            email=u.email,
+        )
+        for u in users
+    ]
+
+
+# ===========================================================
 # CONVERSATION ENDPOINTS
 # ===========================================================
 

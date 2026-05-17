@@ -241,12 +241,13 @@ class ConversationListItem(BaseModel):
     name: Optional[str] = None
     avatar_url: Optional[str] = None
     last_message: Optional[MessageInConversation] = None
+    other_participants: List[UserInChat] = []
     participant_count: int
     unread_count: int
     is_archived: bool
     is_muted: bool
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
 
