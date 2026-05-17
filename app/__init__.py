@@ -19,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.router import router as v1_router
 from app.core.config import settings
 from app.core.database import close_db, init_db
+from app.websocket.manager import init_websocket_manager
+from app.storage.base import init_storage
 from app.middleware.middleware import (
     AuditMiddleware,
     ErrorHandlerMiddleware,
@@ -42,6 +44,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"DB init skipped: {e}")
     Path("uploads/property_images").mkdir(parents=True, exist_ok=True)
+    Path("uploads/chat").mkdir(parents=True, exist_ok=True)
+    init_websocket_manager()
+    init_storage("local", base_path="uploads/chat")
+    logger.info("WebSocket manager and chat storage initialized")
     yield
     await close_db()
     logger.info("Shutdown complete")

@@ -47,3 +47,7 @@ class DatabaseError(SkiTechException):
 # Aliases used by attendance module
 NotFoundException = NotFoundError
 ValidationException = ValidationError
+
+# Aliases used by chat module
+AccessDenied = ForbiddenError
+NotFound = NotFoundError
