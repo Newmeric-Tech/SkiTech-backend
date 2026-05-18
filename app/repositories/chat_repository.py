@@ -41,25 +41,26 @@ class ConversationRepository:
         self,
         conversation_id: UUID,
         tenant_id: UUID,
-        property_id: UUID,
+        property_id: Optional[UUID],
         user_id: UUID
     ) -> Optional[Conversation]:
         """
         Get conversation by ID with multi-level isolation:
         - Must belong to tenant
-        - Must belong to property
+        - Must belong to property (skipped when property_id is None — Tenant Admin cross-property access)
         - User must be participant
         """
+        conditions = [
+            Conversation.id == conversation_id,
+            Conversation.tenant_id == tenant_id,
+            Conversation.deleted_at.is_(None),
+        ]
+        if property_id is not None:
+            conditions.append(Conversation.property_id == property_id)
+
         stmt = (
             select(Conversation)
-            .where(
-                and_(
-                    Conversation.id == conversation_id,
-                    Conversation.tenant_id == tenant_id,
-                    Conversation.property_id == property_id,
-                    Conversation.deleted_at.is_(None)
-                )
-            )
+            .where(and_(*conditions))
             .options(
                 selectinload(Conversation.participants).selectinload(ConversationParticipant.user),
                 selectinload(Conversation.creator),
@@ -80,16 +81,24 @@ class ConversationRepository:
         self,
         user_id: UUID,
         tenant_id: UUID,
-        property_id: UUID,
+        property_id: Optional[UUID] = None,
         skip: int = 0,
         limit: int = 50,
         include_archived: bool = False
     ) -> Tuple[List[Conversation], int]:
         """
         Get all conversations for user in property, ordered by last activity.
+        When property_id is None (Tenant Admin), returns conversations from all properties.
         Returns (conversations, total_count)
         """
-        # Base query: conversations in property where user is participant and not deleted
+        conditions = [
+            Conversation.tenant_id == tenant_id,
+            Conversation.deleted_at.is_(None),
+        ]
+        if property_id is not None:
+            conditions.append(Conversation.property_id == property_id)
+
+        # Base query: conversations where user is participant and not deleted
         base_query = (
             select(Conversation)
             .join(
@@ -100,21 +109,15 @@ class ConversationRepository:
                     ConversationParticipant.left_at.is_(None)  # Still member
                 )
             )
-            .where(
-                and_(
-                    Conversation.tenant_id == tenant_id,
-                    Conversation.property_id == property_id,
-                    Conversation.deleted_at.is_(None)
-                )
-            )
+            .where(and_(*conditions))
         )
 
         # Filter archived if needed
         if not include_archived:
             base_query = base_query.where(Conversation.is_archived.is_(False))
 
-        # Count query
-        count_stmt = select(func.count()).select_from(base_query)
+        # Count query — must use .subquery() for SQLAlchemy 2.0 compatibility
+        count_stmt = select(func.count()).select_from(base_query.subquery())
         count_result = await self.session.execute(count_stmt)
         total_count = count_result.scalar()
 

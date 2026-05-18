@@ -160,7 +160,7 @@ async def get_chat_contacts(
 )
 async def list_conversations(
     tenant_id: UUID = Query(..., description="Tenant ID"),
-    property_id: UUID = Query(..., description="Property ID"),
+    property_id: Optional[UUID] = Query(None, description="Property ID (omit for Tenant Admin to see all properties)"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     include_archived: bool = Query(False),
@@ -168,23 +168,27 @@ async def list_conversations(
     session: AsyncSession = Depends(get_async_session)
 ):
     """
-    Get all conversations for user in property.
-    
-    Multi-tenant isolation:
-    - Only returns conversations from user's property
-    - Excludes other tenant/property conversations
-    - Verifies user membership
+    Get all conversations for the authenticated user.
+
+    - Tenant Admin (no property_id): returns conversations across ALL properties in the tenant.
+    - Manager/Staff: returns conversations for their property.
     """
+    from app.utils.chat_security import verify_jwt_token, verify_tenant_access, verify_property_access
     try:
-        security = await get_chat_security_context(authorization, tenant_id, property_id, session)
+        user, _token_data = await verify_jwt_token(authorization, session)
+        await verify_tenant_access(user, tenant_id, session)
+        # Effective property: explicit param → user's own property → None (Tenant Admin sees all)
+        effective_prop = property_id if property_id is not None else user.property_id
+        if effective_prop is not None:
+            await verify_property_access(user, tenant_id, effective_prop, session)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
     service = ConversationService(session)
     conversations, total = await service.get_user_conversations(
-        user_id=security.user_id,
-        tenant_id=security.tenant_id,
-        property_id=security.property_id,
+        user_id=user.id,
+        tenant_id=tenant_id,
+        property_id=effective_prop,
         skip=skip,
         limit=limit,
         include_archived=include_archived

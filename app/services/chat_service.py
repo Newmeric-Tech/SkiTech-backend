@@ -59,12 +59,12 @@ class ConversationService:
         self,
         user_id: UUID,
         tenant_id: UUID,
-        property_id: UUID,
+        property_id: Optional[UUID] = None,
         skip: int = 0,
         limit: int = 50,
         include_archived: bool = False
     ) -> Tuple[List[ConversationListItem], int]:
-        """Get all conversations for user in property"""
+        """Get all conversations for user. property_id=None returns all tenant conversations (Tenant Admin)."""
         conversations, total = await self.conv_repo.get_user_conversations(
             user_id=user_id,
             tenant_id=tenant_id,
@@ -96,12 +96,12 @@ class ConversationService:
                 participant_count=conv.participant_count,
                 unread_count=conv.unread_count,
                 is_archived=conv.is_archived,
-                # Get muted status for current user
                 is_muted=next(
                     (p.is_muted for p in conv.participants if p.user_id == user_id),
                     False
                 ),
-                updated_at=conv.last_message_at or conv.updated_at
+                updated_at=conv.last_message_at or conv.updated_at,
+                property_id=conv.property_id,
             )
             items.append(item)
 

@@ -248,6 +248,7 @@ class ConversationListItem(BaseModel):
     is_archived: bool
     is_muted: bool
     updated_at: datetime
+    property_id: Optional[UUID] = None
 
     class Config:
         from_attributes = True
