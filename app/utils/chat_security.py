@@ -194,9 +194,8 @@ async def verify_property_access(
     if not property_obj:
         raise AccessDenied("Property not found or access denied")
 
-    # User must belong to property or be super admin
-    # For now, check if user.property_id matches
-    if user.property_id != property_id:
+    # Users with no assigned property (Tenant Admin / Super Admin) can access any property in their tenant
+    if user.property_id is not None and user.property_id != property_id:
         raise AccessDenied("User does not have access to this property")
 
     return property_obj
