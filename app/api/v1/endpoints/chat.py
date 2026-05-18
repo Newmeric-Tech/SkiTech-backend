@@ -107,7 +107,7 @@ async def get_chat_contacts(
     current_role = role_result.scalar_one_or_none() or ""
 
     role_map = {
-        "Tenant Admin": ["Tenant Admin", "Manager"],
+        "Tenant Admin": ["Tenant Admin", "Manager", "Staff"],
         "Manager":      ["Tenant Admin", "Staff"],
         "Staff":        ["Manager", "Staff"],
     }
