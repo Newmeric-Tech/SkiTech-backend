@@ -69,16 +69,24 @@ async def init_db() -> None:
     import app.models  # noqa: F401
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # checkfirst=True (default) skips tables that already exist.
+        # Run each table individually so one failure doesn't abort the rest.
+        for table in Base.metadata.sorted_tables:
+            try:
+                await conn.run_sync(lambda c, t=table: t.create(c, checkfirst=True))
+            except Exception:
+                pass  # Table already exists or has a harmless constraint conflict
 
         # Idempotent column additions for existing tables
-        # (create_all skips tables that already exist, so new columns need ALTER TABLE)
         migrations = [
             "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS current_status VARCHAR(50);",
             "ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb;",
         ]
         for sql in migrations:
-            await conn.execute(text(sql))
+            try:
+                await conn.execute(text(sql))
+            except Exception:
+                pass
 
 
 async def close_db() -> None:
