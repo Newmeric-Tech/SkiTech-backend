@@ -1,0 +1,98 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.spyderproject
+.spyproject
+.ropeproject
+
+# Logs
+*.log
+app.log
+local_settings.py
+
+# Coverage & Testing
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Translations
+*.mo
+*.pot
+
+# Sphinx documentation
+docs/_build/
+/site
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# mypy
+.mypy_cache/
+
+# pyenv
+.python-version
+
+# celery
+celerybeat-schedule
+
+# SageMaker
+*.sage.py
+
+# Alembic (keep versions tracked, ignore __pycache__)
+alembic/versions/__pycache__/
+
+# PyInstaller
+*.manifest
+*.spec
+
+docs/
