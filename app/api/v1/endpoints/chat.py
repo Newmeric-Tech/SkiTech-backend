@@ -19,7 +19,7 @@ Every endpoint includes:
 
 from datetime import datetime
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import (
@@ -70,22 +70,30 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 )
 async def get_chat_contacts(
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session),
 ):
     """
-    Returns users the caller is allowed to chat with, filtered by role:
-    - Tenant Admin: other Tenant Admins + Managers in same property
-    - Manager: Tenant Admins + Staff in same property
-    - Staff: Managers + Staff in same property
-    - Super Admin: everyone in property
+    Returns users the caller is allowed to chat with, filtered by role.
+    property_id is optional — when omitted, Tenant Admins see contacts
+    across all properties in their tenant.
+
+    Role rules:
+    - Tenant Admin: other Tenant Admins + Managers (same tenant, optional property filter)
+    - Manager:      Tenant Admins + Staff (same property)
+    - Staff:        Managers + Staff (same property)
     """
     from app.models.models import User as UserModel, Role as RoleModel
     from sqlalchemy import select, and_
 
+    # Verify JWT + tenant; skip property check when property_id is None
     try:
-        security = await get_chat_security_context(authorization, tenant_id, property_id, session)
+        from app.utils.chat_security import verify_jwt_token, verify_tenant_access, verify_property_access
+        user, token_data = await verify_jwt_token(authorization, session)
+        await verify_tenant_access(user, tenant_id, session)
+        if property_id is not None:
+            await verify_property_access(user, tenant_id, property_id, session)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
@@ -93,7 +101,7 @@ async def get_chat_contacts(
     role_stmt = (
         select(RoleModel.name)
         .join(UserModel, UserModel.role_id == RoleModel.id)
-        .where(UserModel.id == security.user_id)
+        .where(UserModel.id == user.id)
     )
     role_result = await session.execute(role_stmt)
     current_role = role_result.scalar_one_or_none() or ""
@@ -105,19 +113,24 @@ async def get_chat_contacts(
     }
     allowed_roles = role_map.get(current_role, ["Tenant Admin", "Manager", "Staff"])
 
+    conditions = [
+        UserModel.tenant_id == tenant_id,
+        UserModel.is_active.is_(True),
+        UserModel.deleted_at.is_(None),
+        UserModel.id != user.id,
+        RoleModel.name.in_(allowed_roles),
+    ]
+    # Only filter by property when caller has one (or explicitly passes one)
+    if property_id is not None:
+        conditions.append(UserModel.property_id == property_id)
+    elif user.property_id is not None:
+        conditions.append(UserModel.property_id == user.property_id)
+    # else: Tenant Admin with no property → see contacts across all properties
+
     stmt = (
         select(UserModel)
         .join(RoleModel, UserModel.role_id == RoleModel.id)
-        .where(
-            and_(
-                UserModel.tenant_id == tenant_id,
-                UserModel.property_id == property_id,
-                UserModel.is_active.is_(True),
-                UserModel.deleted_at.is_(None),
-                UserModel.id != security.user_id,
-                RoleModel.name.in_(allowed_roles),
-            )
-        )
+        .where(and_(*conditions))
         .order_by(UserModel.first_name, UserModel.last_name)
     )
     result = await session.execute(stmt)
@@ -129,6 +142,7 @@ async def get_chat_contacts(
             first_name=u.first_name or "",
             last_name=u.last_name or "",
             email=u.email,
+            property_id=u.property_id,
         )
         for u in users
     ]

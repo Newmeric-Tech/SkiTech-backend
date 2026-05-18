@@ -94,7 +94,8 @@ class UserInChat(BaseModel):
     first_name: str
     last_name: str
     email: str
-    
+    property_id: Optional[UUID] = None
+
     class Config:
         from_attributes = True
 
