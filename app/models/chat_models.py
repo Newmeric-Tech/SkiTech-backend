@@ -240,7 +240,7 @@ class Message(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     )
     replies = relationship(
         "Message",
-        remote_side=[id],
+        remote_side="Message.id",
         backref="replied_message",
         foreign_keys=[reply_to_id]
     )
