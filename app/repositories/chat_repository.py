@@ -60,7 +60,10 @@ class ConversationRepository:
                     Conversation.deleted_at.is_(None)
                 )
             )
-            .options(selectinload(Conversation.participants))
+            .options(
+                selectinload(Conversation.participants).selectinload(ConversationParticipant.user),
+                selectinload(Conversation.creator),
+            )
         )
         result = await self.session.execute(stmt)
         conversation = result.scalar_one_or_none()
@@ -151,11 +154,12 @@ class ConversationRepository:
                     Conversation.deleted_at.is_(None)
                 )
             )
+            .options(selectinload(Conversation.participants))
         )
         result = await self.session.execute(stmt)
         conversations = result.scalars().all()
 
-        # Check both participants
+        # Check both participants (participants already eagerly loaded above)
         for conv in conversations:
             participants_ids = {p.user_id for p in conv.participants}
             if user_id1 in participants_ids and user_id2 in participants_ids:
