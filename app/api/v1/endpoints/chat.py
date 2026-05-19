@@ -24,7 +24,7 @@ from uuid import UUID
 
 from fastapi import (
     APIRouter, Depends, HTTPException, status, UploadFile, File,
-    Header, Query, WebSocket, WebSocketDisconnect
+    Header, Query, WebSocket, WebSocketDisconnect, Body
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,7 +107,9 @@ async def get_chat_contacts(
     current_role = role_result.scalar_one_or_none() or ""
 
     role_map = {
+        "Super Admin":  ["Tenant Admin", "Manager", "Staff", "Super Admin"],
         "Tenant Admin": ["Tenant Admin", "Manager", "Staff"],
+        "Owner":        ["Tenant Admin", "Manager", "Staff"],
         "Manager":      ["Tenant Admin", "Staff"],
         "Staff":        ["Manager", "Staff"],
     }
@@ -219,7 +221,7 @@ async def list_conversations(
 async def create_direct_conversation(
     tenant_id: UUID = Query(...),
     property_id: UUID = Query(...),
-    request: CreateDirectConversationRequest = None,
+    request: CreateDirectConversationRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -260,7 +262,7 @@ async def create_direct_conversation(
 async def create_group_conversation(
     tenant_id: UUID = Query(...),
     property_id: UUID = Query(...),
-    request: CreateGroupConversationRequest = None,
+    request: CreateGroupConversationRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -331,7 +333,7 @@ async def update_conversation(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
     property_id: UUID = Query(...),
-    request: UpdateConversationRequest = None,
+    request: UpdateConversationRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -398,7 +400,7 @@ async def mute_conversation(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
     property_id: UUID = Query(...),
-    request: MuteConversationRequest = None,
+    request: MuteConversationRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -434,7 +436,7 @@ async def send_message(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
     property_id: UUID = Query(...),
-    request: MessageCreateRequest = None,
+    request: MessageCreateRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -519,7 +521,7 @@ async def edit_message(
     tenant_id: UUID = Query(...),
     property_id: UUID = Query(...),
     conversation_id: UUID = Query(...),
-    request: MessageEditRequest = None,
+    request: MessageEditRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -654,7 +656,7 @@ async def add_participant(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
     property_id: UUID = Query(...),
-    request: AddParticipantRequest = None,
+    request: AddParticipantRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
