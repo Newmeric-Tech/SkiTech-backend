@@ -131,8 +131,8 @@ class ConversationService:
                 id=p.id,
                 user=UserInChat(
                     id=p.user.id,
-                    first_name=p.user.first_name,
-                    last_name=p.user.last_name,
+                    first_name=p.user.first_name or "",
+                    last_name=p.user.last_name or "",
                     email=p.user.email
                 ),
                 role=p.role,
@@ -154,8 +154,8 @@ class ConversationService:
             avatar_url=conversation.avatar_url,
             created_by=UserInChat(
                 id=conversation.creator.id,
-                first_name=conversation.creator.first_name,
-                last_name=conversation.creator.last_name,
+                first_name=conversation.creator.first_name or "",
+                last_name=conversation.creator.last_name or "",
                 email=conversation.creator.email
             ) if conversation.creator else None,
             participants=participants,
@@ -419,8 +419,8 @@ class ParticipantService:
             id=new_participant.id,
             user=UserInChat(
                 id=new_participant.user.id,
-                first_name=new_participant.user.first_name,
-                last_name=new_participant.user.last_name,
+                first_name=new_participant.user.first_name or "",
+                last_name=new_participant.user.last_name or "",
                 email=new_participant.user.email
             ),
             role=new_participant.role,
@@ -727,8 +727,8 @@ class MessageService:
             conversation_id=message.conversation_id,
             sender=UserInChat(
                 id=message.sender.id,
-                first_name=message.sender.first_name,
-                last_name=message.sender.last_name,
+                first_name=message.sender.first_name or "",
+                last_name=message.sender.last_name or "",
                 email=message.sender.email
             ),
             content=message.content,
