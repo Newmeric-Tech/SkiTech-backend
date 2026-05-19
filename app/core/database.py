@@ -68,25 +68,43 @@ async def init_db() -> None:
     from app.models.base import Base  # noqa: F401 - registers all models
     import app.models  # noqa: F401
 
-    async with engine.begin() as conn:
-        # checkfirst=True (default) skips tables that already exist.
-        # Run each table individually so one failure doesn't abort the rest.
-        for table in Base.metadata.sorted_tables:
-            try:
-                await conn.run_sync(lambda c, t=table: t.create(c, checkfirst=True))
-            except Exception:
-                pass  # Table already exists or has a harmless constraint conflict
-
-        # Idempotent column additions for existing tables
-        migrations = [
-            "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS current_status VARCHAR(50);",
-            "ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb;",
-        ]
-        for sql in migrations:
-            try:
+    # Step 1: Create PostgreSQL ENUM types used by chat tables.
+    # DO blocks are idempotent — they silently skip types that already exist.
+    # Each runs in its own transaction so a failure doesn't cascade.
+    chat_enum_sqls = [
+        "DO $$ BEGIN CREATE TYPE conversationtype AS ENUM ('direct', 'group'); EXCEPTION WHEN duplicate_object THEN null; END $$;",
+        "DO $$ BEGIN CREATE TYPE messagestatus AS ENUM ('sent', 'delivered', 'read'); EXCEPTION WHEN duplicate_object THEN null; END $$;",
+        "DO $$ BEGIN CREATE TYPE participantrole AS ENUM ('admin', 'moderator', 'member'); EXCEPTION WHEN duplicate_object THEN null; END $$;",
+        "DO $$ BEGIN CREATE TYPE mediatype AS ENUM ('image', 'file', 'video', 'audio'); EXCEPTION WHEN duplicate_object THEN null; END $$;",
+    ]
+    for sql in chat_enum_sqls:
+        try:
+            async with engine.begin() as conn:
                 await conn.execute(text(sql))
-            except Exception:
-                pass
+        except Exception:
+            pass
+
+    # Step 2: Create tables one at a time, each in its own transaction.
+    # This prevents a failure on one table (e.g. an already-existing ENUM type)
+    # from aborting the entire run and blocking subsequent tables.
+    for table in Base.metadata.sorted_tables:
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(lambda c, t=table: t.create(c, checkfirst=True))
+        except Exception:
+            pass
+
+    # Step 3: Idempotent column additions for existing tables.
+    migrations = [
+        "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS current_status VARCHAR(50);",
+        "ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb;",
+    ]
+    for sql in migrations:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(sql))
+        except Exception:
+            pass
 
 
 async def close_db() -> None:

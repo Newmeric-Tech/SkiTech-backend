@@ -190,14 +190,17 @@ async def list_conversations(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
     service = ConversationService(session)
-    conversations, total = await service.get_user_conversations(
-        user_id=user.id,
-        tenant_id=tenant_id,
-        property_id=effective_prop,
-        skip=skip,
-        limit=limit,
-        include_archived=include_archived
-    )
+    try:
+        conversations, total = await service.get_user_conversations(
+            user_id=user.id,
+            tenant_id=tenant_id,
+            property_id=effective_prop,
+            skip=skip,
+            limit=limit,
+            include_archived=include_archived
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     return {
         "total": total,
