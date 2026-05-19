@@ -85,7 +85,7 @@ async def get_chat_contacts(
     - Staff:        Managers + Staff (same property)
     """
     from app.models.models import User as UserModel, Role as RoleModel
-    from sqlalchemy import select, and_
+    from sqlalchemy import select, and_, or_
 
     # Verify JWT + tenant; skip property check when property_id is None
     try:
@@ -120,12 +120,17 @@ async def get_chat_contacts(
         UserModel.id != user.id,
         RoleModel.name.in_(allowed_roles),
     ]
-    # Only filter by property when caller has one (or explicitly passes one)
-    if property_id is not None:
-        conditions.append(UserModel.property_id == property_id)
-    elif user.property_id is not None:
-        conditions.append(UserModel.property_id == user.property_id)
-    # else: Tenant Admin with no property → see contacts across all properties
+    # Property filter: always include users with null property_id (Tenant Admins / unassigned)
+    # alongside users explicitly at the target property, so managers can always see the owner.
+    effective_prop = property_id if property_id is not None else user.property_id
+    if effective_prop is not None:
+        conditions.append(
+            or_(
+                UserModel.property_id == effective_prop,
+                UserModel.property_id.is_(None),
+            )
+        )
+    # else: Tenant Admin with no property → no filter, sees everyone in the tenant
 
     stmt = (
         select(UserModel)
