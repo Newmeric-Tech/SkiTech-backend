@@ -16,6 +16,22 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Check if tables already exist (created by init_db before Alembic was wired in)
+    from sqlalchemy import inspect
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    existing = set(inspector.get_table_names())
+
+    if 'conversations' in existing:
+        # Tables already exist from init_db() — just ensure all columns are present
+        with op.batch_alter_table('conversations') as batch_op:
+            cols = {c['name'] for c in inspector.get_columns('conversations')}
+            if 'description' not in cols:
+                batch_op.add_column(sa.Column('description', sa.Text, nullable=True))
+            if 'avatar_url' not in cols:
+                batch_op.add_column(sa.Column('avatar_url', sa.String(512), nullable=True))
+        return
+
     op.create_table(
         'conversations',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),

@@ -188,8 +188,8 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         payload = {
             "sub": str(user.id),
             "user_id": str(user.id),
-            "tenant_id": str(user.tenant_id) if user.tenant_id else "",
-            "property_id": str(user.property_id) if user.property_id else "",
+            "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+            "property_id": str(user.property_id) if user.property_id else None,
             "email": user.email,
             "role": actual_role,
             "first_name": user.first_name or "",
@@ -258,8 +258,8 @@ async def superadmin_login(
     payload = {
         "sub": str(user.id),
         "user_id": str(user.id),
-        "tenant_id": str(user.tenant_id) if user.tenant_id else "",
-        "property_id": str(user.property_id) if user.property_id else "",
+        "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+        "property_id": str(user.property_id) if user.property_id else None,
         "email": user.email,
         "role": role_name,
         "first_name": user.first_name or "",

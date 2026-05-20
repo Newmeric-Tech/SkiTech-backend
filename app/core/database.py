@@ -102,6 +102,23 @@ async def init_db() -> None:
     migrations = [
         "ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS current_status VARCHAR(50);",
         "ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb;",
+        # Chat table column fixes — added after initial deployment
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS description TEXT;",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(512);",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMP;",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS participant_count INTEGER NOT NULL DEFAULT 1;",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS unread_count INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false;",
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;",
+        "ALTER TABLE conversation_participants ADD COLUMN IF NOT EXISTS left_at TIMESTAMP;",
+        "ALTER TABLE conversation_participants ADD COLUMN IF NOT EXISTS is_muted BOOLEAN NOT NULL DEFAULT false;",
+        "ALTER TABLE conversation_participants ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMP;",
+        "ALTER TABLE conversation_participants ADD COLUMN IF NOT EXISTS last_read_message_id UUID;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_count INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS mentions JSONB;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id UUID;",
     ]
     for sql in migrations:
         try:

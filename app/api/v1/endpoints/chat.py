@@ -224,14 +224,35 @@ async def list_conversations(
 )
 async def create_direct_conversation(
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     request: CreateDirectConversationRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
     """Create new direct conversation or get existing one"""
+    from app.utils.chat_security import verify_jwt_token, verify_tenant_access, verify_property_access
     try:
-        security = await get_chat_security_context(authorization, tenant_id, property_id, session)
+        user, _token_data = await verify_jwt_token(authorization, session)
+        await verify_tenant_access(user, tenant_id, session)
+        effective_prop = property_id if property_id is not None else user.property_id
+        if effective_prop is not None:
+            await verify_property_access(user, tenant_id, effective_prop, session)
+        if effective_prop is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="property_id is required — pass it as a query param or ensure your account has a property assigned"
+            )
+        from app.utils.chat_security import ChatSecurityContext
+        security = ChatSecurityContext(
+            user_id=user.id,
+            tenant_id=tenant_id,
+            property_id=effective_prop,
+            username=f"{user.first_name or ''} {user.last_name or ''}".strip(),
+            email=user.email,
+            token_data=_token_data,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
@@ -601,9 +622,14 @@ async def mark_message_as_read(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
+    from app.core.security import decode_token
+    token_data = decode_token(token)
+    if not token_data:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
     service = MessageService(session)
     try:
-        await service.mark_as_read(message_id, conversation_id, UUID(token))
+        await service.mark_as_read(message_id, conversation_id, UUID(token_data["sub"]))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
