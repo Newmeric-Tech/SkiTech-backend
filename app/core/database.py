@@ -119,6 +119,13 @@ async def init_db() -> None:
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_count INTEGER NOT NULL DEFAULT 0;",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS mentions JSONB;",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id UUID;",
+        # ENUM column type fixes — columns were created as VARCHAR before ENUM types existed.
+        # Each USING clause casts existing VARCHAR values to the ENUM type.
+        # These are no-ops if the column is already the correct ENUM type (caught by except).
+        "ALTER TABLE conversations ALTER COLUMN type TYPE conversationtype USING type::conversationtype;",
+        "ALTER TABLE conversation_participants ALTER COLUMN role TYPE participantrole USING role::participantrole;",
+        "ALTER TABLE message_delivery_status ALTER COLUMN status TYPE messagestatus USING status::messagestatus;",
+        "ALTER TABLE message_media ALTER COLUMN media_type TYPE mediatype USING media_type::mediatype;",
     ]
     for sql in migrations:
         try:
