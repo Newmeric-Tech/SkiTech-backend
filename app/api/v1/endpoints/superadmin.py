@@ -496,6 +496,7 @@ async def update_settings(
 async def list_users(
     search: Optional[str] = Query(None),
     role: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=200),
     db: AsyncSession = Depends(get_db),
@@ -510,6 +511,10 @@ async def list_users(
                 User.last_name.ilike(f"%{search}%"),
             )
         )
+    if status == "suspended":
+        filters.append(User.is_active == False)
+    elif status == "active":
+        filters.append(User.is_active == True)
 
     users = (await db.execute(
         select(User).where(and_(*filters)).offset(skip).limit(limit)
@@ -533,7 +538,7 @@ async def list_users(
             "role": role_name,
             "property": str(u.property_id) if u.property_id else "",
             "last_active": u.last_login.isoformat() if u.last_login else "",
-            "status": "active" if u.is_active else "inactive",
+            "status": "active" if u.is_active else "suspended",
         })
 
     return result
