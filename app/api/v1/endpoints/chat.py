@@ -231,16 +231,26 @@ async def create_direct_conversation(
 ):
     """Create new direct conversation or get existing one"""
     from app.utils.chat_security import verify_jwt_token, verify_tenant_access, verify_property_access
+    from app.models.models import User as UserModel
+    from sqlalchemy import select as sa_select
     try:
         user, _token_data = await verify_jwt_token(authorization, session)
         await verify_tenant_access(user, tenant_id, session)
         effective_prop = property_id if property_id is not None else user.property_id
+
+        # Tenant Admin has no property — derive it from the other participant
+        if effective_prop is None:
+            other_stmt = sa_select(UserModel.property_id).where(UserModel.id == request.other_user_id)
+            other_result = await session.execute(other_stmt)
+            effective_prop = other_result.scalar_one_or_none()
+
         if effective_prop is not None:
             await verify_property_access(user, tenant_id, effective_prop, session)
+
         if effective_prop is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="property_id is required — pass it as a query param or ensure your account has a property assigned"
+                detail="Cannot determine property for this conversation — neither participant has an assigned property"
             )
         from app.utils.chat_security import ChatSecurityContext
         security = ChatSecurityContext(
@@ -293,8 +303,44 @@ async def create_group_conversation(
     session: AsyncSession = Depends(get_async_session)
 ):
     """Create new group conversation"""
+    from app.utils.chat_security import verify_jwt_token, verify_tenant_access, verify_property_access
+    from app.utils.chat_security import ChatSecurityContext
+    from app.models.models import User as UserModel
+    from sqlalchemy import select as sa_select
     try:
-        security = await get_chat_security_context(authorization, tenant_id, property_id, session)
+        user, _token_data = await verify_jwt_token(authorization, session)
+        await verify_tenant_access(user, tenant_id, session)
+        effective_prop = property_id if property_id is not None else user.property_id
+
+        # Tenant Admin has no property — derive from any participant who has one
+        if effective_prop is None:
+            for pid in request.participant_ids:
+                p_stmt = sa_select(UserModel.property_id).where(UserModel.id == pid)
+                p_result = await session.execute(p_stmt)
+                p_prop = p_result.scalar_one_or_none()
+                if p_prop:
+                    effective_prop = p_prop
+                    break
+
+        if effective_prop is not None:
+            await verify_property_access(user, tenant_id, effective_prop, session)
+
+        if effective_prop is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot determine property for this group — no participant has an assigned property"
+            )
+
+        security = ChatSecurityContext(
+            user_id=user.id,
+            tenant_id=tenant_id,
+            property_id=effective_prop,
+            username=f"{user.first_name or ''} {user.last_name or ''}".strip(),
+            email=user.email,
+            token_data=_token_data,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
