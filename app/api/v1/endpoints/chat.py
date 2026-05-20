@@ -22,11 +22,15 @@ from io import BytesIO
 from typing import List, Optional
 from uuid import UUID
 
+import logging
+
 from fastapi import (
     APIRouter, Depends, HTTPException, status, UploadFile, File,
     Header, Query, WebSocket, WebSocketDisconnect, Body
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("skitech")
 
 from app.core.database import get_db as get_async_session
 from app.utils.chat_security import (
@@ -247,6 +251,7 @@ async def create_direct_conversation(
         )
         return conversation
     except Exception as e:
+        logger.error(f"create_direct_conversation failed: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)

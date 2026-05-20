@@ -4,6 +4,7 @@ Database Configuration - app/core/database.py
 Async SQLAlchemy engine, session management, and dependency injection.
 """
 
+import logging
 from typing import AsyncGenerator
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 
@@ -12,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
+
+logger = logging.getLogger("skitech")
 
 
 def _clean_db_url(url: str) -> str:
@@ -81,8 +84,8 @@ async def init_db() -> None:
         try:
             async with engine.begin() as conn:
                 await conn.execute(text(sql))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"ENUM type init skipped: {e}")
 
     # Step 2: Create tables one at a time, each in its own transaction.
     # This prevents a failure on one table (e.g. an already-existing ENUM type)
@@ -91,8 +94,9 @@ async def init_db() -> None:
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(lambda c, t=table: t.create(c, checkfirst=True))
-        except Exception:
-            pass
+            logger.debug(f"Table ready: {table.name}")
+        except Exception as e:
+            logger.error(f"Failed to create table '{table.name}': {e}")
 
     # Step 3: Idempotent column additions for existing tables.
     migrations = [
@@ -103,8 +107,8 @@ async def init_db() -> None:
         try:
             async with engine.begin() as conn:
                 await conn.execute(text(sql))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Column migration skipped: {e}")
 
 
 async def close_db() -> None:
