@@ -294,7 +294,7 @@ async def verify_message_sender(
 async def get_chat_security_context(
     authorization: str,
     tenant_id: UUID,
-    property_id: UUID,
+    property_id: Optional[UUID],
     session: AsyncSession = Depends(get_async_session)
 ) -> ChatSecurityContext:
     """
@@ -320,7 +320,8 @@ async def get_chat_security_context(
     await verify_tenant_access(user, tenant_id, session)
 
     # Verify property access
-    await verify_property_access(user, tenant_id, property_id, session)
+    if property_id is not None:
+        await verify_property_access(user,tenant_id,property_id,session)
 
     return ChatSecurityContext(
         user_id=user.id,

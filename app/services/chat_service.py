@@ -21,8 +21,6 @@ Services:
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from uuid import UUID
-import io
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat_models import (
@@ -111,7 +109,7 @@ class ConversationService:
         self,
         conversation_id: UUID,
         tenant_id: UUID,
-        property_id: UUID,
+        property_id: Optional[UUID],
         user_id: UUID
     ) -> ConversationDetailResponse:
         """Get full conversation details"""
@@ -141,7 +139,7 @@ class ConversationService:
                 is_muted=p.is_muted
             )
             for p in conversation.participants
-            if p.left_at is None
+            if p.left_at is None and p.user is not None
         ]
 
         return ConversationDetailResponse(
@@ -722,15 +720,16 @@ class MessageService:
         # Count reads
         read_count = sum(1 for s in message.statuses if s.status == MessageStatus.READ)
 
+        sender_user = message.sender
         return MessageResponse(
             id=message.id,
             conversation_id=message.conversation_id,
             sender=UserInChat(
-                id=message.sender.id,
-                first_name=message.sender.first_name or "",
-                last_name=message.sender.last_name or "",
-                email=message.sender.email
-            ),
+                id=sender_user.id,
+                first_name=sender_user.first_name or "",
+                last_name=sender_user.last_name or "",
+                email=sender_user.email
+            ) if sender_user else UserInChat(id=message.sender_id, first_name="Deleted", last_name="User", email=""),
             content=message.content,
             reply_to_id=message.reply_to_id,
             media=media_list,
