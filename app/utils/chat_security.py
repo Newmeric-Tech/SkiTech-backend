@@ -45,7 +45,7 @@ class ChatSecurityContext:
         self,
         user_id: UUID,
         tenant_id: UUID,
-        property_id: UUID,
+        property_id: Optional[UUID],
         username: str,
         email: str,
         token_data: dict

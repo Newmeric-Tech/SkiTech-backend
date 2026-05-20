@@ -287,7 +287,7 @@ async def create_direct_conversation(
 )
 async def create_group_conversation(
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     request: CreateGroupConversationRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
