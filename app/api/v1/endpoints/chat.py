@@ -316,7 +316,6 @@ async def create_group_conversation(
             detail=str(e)
         )
 
-
 @router.get(
     "/conversations/{conversation_id}",
     response_model=ConversationDetailResponse,
@@ -325,13 +324,18 @@ async def create_group_conversation(
 async def get_conversation(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
     """Get full conversation details with participants"""
+    from app.utils.chat_security import verify_jwt_token, verify_tenant_access, verify_property_access
     try:
-        security = await get_chat_security_context(authorization, tenant_id, property_id, session)
+        user, _token_data = await verify_jwt_token(authorization, session)
+        await verify_tenant_access(user, tenant_id, session)
+        effective_prop = property_id if property_id is not None else user.property_id
+        if effective_prop is not None:
+            await verify_property_access(user, tenant_id, effective_prop, session)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
@@ -339,15 +343,18 @@ async def get_conversation(
     try:
         conversation = await service.get_conversation_detail(
             conversation_id=conversation_id,
-            tenant_id=security.tenant_id,
-            property_id=security.property_id,
-            user_id=security.user_id
+            tenant_id=tenant_id,
+            property_id=effective_prop,
+            user_id=user.id
         )
         return conversation
     except AccessDenied as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except NotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.exception("get_conversation failed: %s", e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.put(
