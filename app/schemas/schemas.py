@@ -660,6 +660,63 @@ class AuditReportResponse(BaseModel):
     limit: int
     logs: List[AuditLogResponse]
 
+
+# ===========================================================
+# ACTIVITY LOG (Owner/Property-specific)
+# ===========================================================
+
+class ActivityLogDetailedResponse(BaseModel):
+    """Enhanced activity log response for owner dashboard."""
+    id: UUID
+    tenant_id: Optional[UUID]
+    property_id: Optional[UUID]
+    user_id: Optional[UUID]
+    user_email: Optional[str]
+    action: str
+    resource_type: str
+    resource_id: Optional[str]
+    details: Optional[str]
+    old_values: Optional[dict]
+    new_values: Optional[dict]
+    severity: str
+    status: str
+    ip_address: Optional[str]
+    user_agent: Optional[str]
+    is_system_action: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ActivityLogListResponse(BaseModel):
+    """Paginated activity logs response."""
+    total: int
+    page: int
+    limit: int
+    logs: List[ActivityLogDetailedResponse]
+
+
+class ActivityLogSummaryResponse(BaseModel):
+    """Summary statistics for activity logs."""
+    total_events: int
+    warnings: int
+    critical: int
+    by_action: List[dict]
+    by_resource: List[dict]
+    by_severity: List[dict]
+    log_size_gb: float
+
+
+class ActivityLogAnalyticsResponse(BaseModel):
+    """Comprehensive analytics response."""
+    period_days: int
+    summary: ActivityLogSummaryResponse
+    critical_events: List[ActivityLogDetailedResponse]
+    top_users: List[dict]
+    action_distribution: List[dict]
+
+
 # ===========================================================
 # ROOMS & BOOKINGS
 # ===========================================================
