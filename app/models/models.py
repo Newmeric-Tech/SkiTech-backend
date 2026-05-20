@@ -764,6 +764,303 @@ class ShiftAssignment(Base, UUIDMixin, TimestampMixin):
     )
 
     schedule = relationship("WeeklySchedule", back_populates="shift_assignments")
+
+
+# ===========================================================
+# DOCUMENT MANAGEMENT
+# ===========================================================
+
+class Document(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
+    """Main document storage model"""
+    __tablename__ = "documents"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=True)
+    
+    # Document metadata
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    category = Column(String(100), nullable=False)  # e.g., Operational Records, Financial Reports, HR, etc.
+    department = Column(String(100))
+    
+    # File information
+    file_name = Column(String(500), nullable=False)
+    file_path = Column(String(1000), nullable=False)  # S3 or storage path
+    file_size = Column(Integer)  # in bytes
+    file_type = Column(String(50))  # mime type (pdf, xlsx, png, etc.)
+    file_extension = Column(String(20))  # .pdf, .xlsx, etc.
+    
+    # Metadata
+    tags = Column(String(500))  # comma-separated tags
+    access_scope = Column(String(50), nullable=False, default="organization_wide")  # organization_wide / department / private
+    
+    # User information
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    
+    # Review information
+    assigned_compliance_reviewer = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    
+    # Status tracking
+    status = Column(String(50), nullable=False, default="pending_review")  # pending_review / approved / rejected / active / archived
+    approval_status = Column(String(50), default="pending")  # pending / awaiting_approval / approved / rejected
+    
+    # Timestamps
+    upload_date = Column(DateTime, nullable=False, server_default=func.now())
+    last_modified = Column(DateTime, onupdate=func.now())
+    
+    # Compliance
+    is_confidential = Column(Boolean, default=False)
+    retention_period = Column(Integer)  # days
+    expiry_date = Column(DateTime)
+    requires_signature = Column(Boolean, default=False)
+
+    __table_args__ = (
+        Index("idx_document_tenant", "tenant_id"),
+        Index("idx_document_property", "property_id"),
+        Index("idx_document_category", "category"),
+        Index("idx_document_status", "status"),
+        Index("idx_document_uploaded_by", "uploaded_by"),
+        Index("idx_document_created_at", "created_at"),
+        Index("idx_document_access_scope", "access_scope"),
+    )
+
+    # Relationships
+    uploader = relationship("User", foreign_keys=[uploaded_by], viewonly=True)
+    owner = relationship("User", foreign_keys=[owner_id], viewonly=True)
+    reviewer = relationship("User", foreign_keys=[assigned_compliance_reviewer], viewonly=True)
+    tenant = relationship("Tenant", viewonly=True)
+    
+    reviews = relationship("DocumentReview", back_populates="document", cascade="all, delete-orphan")
+    approvals = relationship("DocumentApproval", back_populates="document", cascade="all, delete-orphan")
+    versions = relationship("DocumentVersion", back_populates="document", cascade="all, delete-orphan")
+    shares = relationship("DocumentShare", back_populates="document", cascade="all, delete-orphan")
+    activity_logs = relationship("DocumentActivityLog", back_populates="document", cascade="all, delete-orphan")
+    signatures = relationship("DocumentSignature", back_populates="document", cascade="all, delete-orphan")
+
+
+class DocumentVersion(Base, UUIDMixin, TimestampMixin):
+    """Track document versions for audit trail"""
+    __tablename__ = "document_versions"
+
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    version_number = Column(Integer, nullable=False)
+    file_path = Column(String(1000), nullable=False)
+    file_size = Column(Integer)
+    
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    change_description = Column(Text)
+    
+    __table_args__ = (
+        Index("idx_document_version_document", "document_id"),
+        Index("idx_document_version_created", "created_at"),
+    )
+
+    document = relationship("Document", back_populates="versions")
+    uploader = relationship("User", viewonly=True)
+
+
+class DocumentReview(Base, UUIDMixin, TimestampMixin):
+    """Document review and approval workflow"""
+    __tablename__ = "document_reviews"
+
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    # Reviewer information
+    reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewer_role = Column(String(100))  # e.g., Manager Reviewer, Compliance Officer
+    
+    # Review details
+    review_status = Column(String(50), nullable=False, default="pending")  # pending / in_progress / completed / approved / rejected
+    review_priority = Column(String(50), nullable=False, default="medium")  # low / medium / high / critical
+    
+    comments = Column(Text)
+    rejection_reason = Column(Text)
+    
+    # Timestamps
+    assigned_at = Column(DateTime, nullable=False, server_default=func.now())
+    review_started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    
+    # Metadata
+    requires_additional_info = Column(Boolean, default=False)
+    additional_info_request = Column(Text)
+
+    __table_args__ = (
+        Index("idx_document_review_document", "document_id"),
+        Index("idx_document_review_reviewer", "reviewer_id"),
+        Index("idx_document_review_status", "review_status"),
+        Index("idx_document_review_assigned_at", "assigned_at"),
+    )
+
+    document = relationship("Document", back_populates="reviews")
+    reviewer = relationship("User", viewonly=True)
+
+
+class DocumentApproval(Base, UUIDMixin, TimestampMixin):
+    """Final approval status for documents"""
+    __tablename__ = "document_approvals"
+
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    # Approver information
+    approver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approver_role = Column(String(100))  # e.g., Owner, Manager, Compliance Officer
+    
+    # Approval details
+    approval_status = Column(String(50), nullable=False, default="pending")  # pending / approved / rejected / conditional_approval
+    approval_reason = Column(Text)
+    
+    # Conditional approval
+    conditions = Column(JSONB)  # JSON object for conditions
+    
+    # Timestamps
+    assigned_at = Column(DateTime, nullable=False, server_default=func.now())
+    decided_at = Column(DateTime)
+
+    __table_args__ = (
+        Index("idx_document_approval_document", "document_id"),
+        Index("idx_document_approval_approver", "approver_id"),
+        Index("idx_document_approval_status", "approval_status"),
+    )
+
+    document = relationship("Document", back_populates="approvals")
+    approver = relationship("User", viewonly=True)
+
+
+class DocumentShare(Base, UUIDMixin, TimestampMixin):
+    """Track document sharing with specific users/departments"""
+    __tablename__ = "document_shares"
+
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    # Share recipient
+    shared_with_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    shared_with_department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id", ondelete="CASCADE"), nullable=True)
+    
+    # Share details
+    shared_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    permission_level = Column(String(50), nullable=False, default="view")  # view / comment / edit / download
+    
+    # Sharing date
+    shared_at = Column(DateTime, nullable=False, server_default=func.now())
+    
+    # Share expiration
+    expires_at = Column(DateTime)  # Optional expiration date
+    is_active = Column(Boolean, default=True)
+
+    __table_args__ = (
+        Index("idx_document_share_document", "document_id"),
+        Index("idx_document_share_user", "shared_with_user_id"),
+        Index("idx_document_share_department", "shared_with_department_id"),
+        Index("idx_document_share_shared_at", "shared_at"),
+    )
+
+    document = relationship("Document", back_populates="shares")
+    recipient_user = relationship("User", foreign_keys=[shared_with_user_id], viewonly=True)
+    recipient_department = relationship("Department", foreign_keys=[shared_with_department_id], viewonly=True)
+    sharer = relationship("User", foreign_keys=[shared_by], viewonly=True)
+
+
+class DocumentSignature(Base, UUIDMixin, TimestampMixin):
+    """E-signature tracking for documents"""
+    __tablename__ = "document_signatures"
+
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    # Signer information
+    signer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    signer_name = Column(String(255), nullable=False)
+    signer_email = Column(String(255), nullable=False)
+    signer_role = Column(String(100))
+    
+    # Signature details
+    signature_status = Column(String(50), nullable=False, default="pending")  # pending / signed / rejected
+    signature_image = Column(Text)  # base64 encoded image
+    
+    # Timestamps
+    signature_request_sent_at = Column(DateTime)
+    signed_at = Column(DateTime)
+    
+    # Additional info
+    decline_reason = Column(Text)
+
+    __table_args__ = (
+        Index("idx_document_signature_document", "document_id"),
+        Index("idx_document_signature_signer", "signer_id"),
+        Index("idx_document_signature_status", "signature_status"),
+    )
+
+    document = relationship("Document", back_populates="signatures")
+    signer = relationship("User", viewonly=True)
+
+
+class DocumentActivityLog(Base, UUIDMixin, TimestampMixin):
+    """Detailed audit trail for all document activities"""
+    __tablename__ = "document_activity_logs"
+
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    # Activity details
+    action = Column(String(100), nullable=False)  # uploaded / reviewed / approved / rejected / shared / downloaded / etc.
+    activity_type = Column(String(50), nullable=False)  # document / review / approval / share / signature / etc.
+    
+    # Actor information
+    performed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    performed_by_name = Column(String(255))
+    performed_by_role = Column(String(100))
+    
+    # Activity metadata
+    details = Column(JSONB)  # Additional metadata as JSON
+    description = Column(Text)
+    
+    # IP and user agent
+    ip_address = Column(String(50))
+    user_agent = Column(String(500))
+
+    __table_args__ = (
+        Index("idx_document_activity_document", "document_id"),
+        Index("idx_document_activity_performed_by", "performed_by"),
+        Index("idx_document_activity_action", "action"),
+        Index("idx_document_activity_created_at", "created_at"),
+    )
+
+    document = relationship("Document", back_populates="activity_logs")
+    actor = relationship("User", viewonly=True)
+
+
+class DocumentTemplate(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
+    """Document templates for common operational records"""
+    __tablename__ = "document_templates"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    # Template metadata
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    category = Column(String(100), nullable=False)
+    
+    # Template content
+    template_content = Column(Text, nullable=False)  # HTML or markdown
+    required_fields = Column(JSONB)  # JSON array of required fields
+    
+    # Usage
+    usage_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+
+    __table_args__ = (
+        Index("idx_document_template_tenant", "tenant_id"),
+        Index("idx_document_template_category", "category"),
+    )
+
+    tenant = relationship("Tenant", viewonly=True)
     employee = relationship("Employee")
     property = relationship("Property")
 
