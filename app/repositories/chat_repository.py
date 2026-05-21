@@ -151,7 +151,7 @@ class ConversationRepository:
             select(Conversation)
             .where(
                 and_(
-                    Conversation.type == ConversationType.DIRECT,
+                    Conversation.type == ConversationType.DIRECT.value,
                     Conversation.tenant_id == tenant_id,
                     Conversation.property_id == property_id,
                     Conversation.deleted_at.is_(None)
