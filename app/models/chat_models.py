@@ -78,7 +78,7 @@ class Conversation(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     property_id: UUID = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Conversation metadata
-    type: str = Column(SQLEnum(ConversationType, native_enum=False), nullable=False, default=ConversationType.DIRECT)
+    type: str = Column(String(50), nullable=False, default=ConversationType.DIRECT)
     name: str = Column(String(255), nullable=True)  # Only used for group chats
     description: Optional[str] = Column(Text, nullable=True)
     
