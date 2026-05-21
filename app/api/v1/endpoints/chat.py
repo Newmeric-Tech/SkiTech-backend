@@ -17,6 +17,7 @@ Every endpoint includes:
 - Request/response validation
 """
 
+import json
 from datetime import datetime
 from io import BytesIO
 from typing import List, Optional
@@ -535,14 +536,15 @@ async def send_message(
             mentions=request.mentions
         )
 
-        # Publish real-time event
+        # Publish real-time event — use json.loads(message.json()) so UUID/datetime
+        # are serialized to strings before websocket.send_json() calls json.dumps()
         manager = get_websocket_manager()
         await publish_message_sent_event(
             manager=manager,
             conversation_id=conversation_id,
             tenant_id=security.tenant_id,
             property_id=security.property_id,
-            message_data=message.dict()
+            message_data=json.loads(message.json())
         )
 
         return message

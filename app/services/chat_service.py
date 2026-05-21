@@ -501,7 +501,7 @@ class MessageService:
         if not participant:
             raise AccessDenied("User is not member of this conversation")
 
-        # Create message
+        # Create and commit message first so it's persisted regardless of what follows
         message = await self.msg_repo.create(
             conversation_id=conversation_id,
             sender_id=sender_id,
@@ -509,22 +509,32 @@ class MessageService:
             reply_to_id=reply_to_id,
             mentions=mentions
         )
-
-        # Create delivery status for all participants
-        participants = await self.participant_repo.get_participants(
-            conversation_id=conversation_id
-        )
-
-        for p in participants:
-            await self.status_repo.create_or_update(
-                message_id=message.id,
-                user_id=p.user_id,
-                status=MessageStatus.SENT if p.user_id != sender_id else MessageStatus.READ
-            )
-
+        message_id = message.id  # capture before commit expires the object
         await self.session.commit()
 
-        return await self._message_to_response(message, sender_id)
+        # Create delivery statuses in a separate operation — if this table has
+        # schema issues it must not roll back the already-committed message
+        try:
+            participants = await self.participant_repo.get_participants(
+                conversation_id=conversation_id
+            )
+            for p in participants:
+                await self.status_repo.create_or_update(
+                    message_id=message_id,
+                    user_id=p.user_id,
+                    status=MessageStatus.SENT if p.user_id != sender_id else MessageStatus.READ
+                )
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()  # delivery status failure is non-fatal
+
+        # Re-fetch with all relationships eagerly loaded — session expires objects
+        # after commit, so accessing lazy attributes would raise MissingGreenlet
+        fresh_message = await self.msg_repo.get_by_id(
+            message_id=message_id,
+            conversation_id=conversation_id
+        )
+        return await self._message_to_response(fresh_message, sender_id)
 
     async def edit_message(
         self,
