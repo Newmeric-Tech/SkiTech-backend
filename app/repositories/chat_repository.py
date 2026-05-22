@@ -675,6 +675,48 @@ class MessageRepository:
         await self.session.flush()
         return True
 
+    async def get_last_messages_for_conversations(
+        self,
+        conversation_ids: List[UUID]
+    ) -> dict:
+        """Get the latest non-deleted message for each conversation in one query."""
+        if not conversation_ids:
+            return {}
+
+        subq = (
+            select(
+                Message.conversation_id,
+                func.max(Message.created_at).label("max_created_at")
+            )
+            .where(
+                and_(
+                    Message.conversation_id.in_(conversation_ids),
+                    Message.deleted_at.is_(None)
+                )
+            )
+            .group_by(Message.conversation_id)
+            .subquery()
+        )
+
+        stmt = (
+            select(Message)
+            .join(
+                subq,
+                and_(
+                    Message.conversation_id == subq.c.conversation_id,
+                    Message.created_at == subq.c.max_created_at
+                )
+            )
+            .where(Message.deleted_at.is_(None))
+            .options(
+                selectinload(Message.sender),
+                selectinload(Message.media)
+            )
+        )
+        result = await self.session.execute(stmt)
+        messages = result.unique().scalars().all()
+        return {m.conversation_id: m for m in messages}
+
 
 # ===========================================================
 # MESSAGE MEDIA REPOSITORY

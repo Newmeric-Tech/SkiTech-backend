@@ -21,6 +21,7 @@ Services:
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from uuid import UUID
+from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat_models import (
@@ -52,6 +53,7 @@ class ConversationService:
         self.session = session
         self.conv_repo = ConversationRepository(session)
         self.participant_repo = ParticipantRepository(session)
+        self.msg_repo = MessageRepository(session)
 
     async def get_user_conversations(
         self,
@@ -72,6 +74,10 @@ class ConversationService:
             include_archived=include_archived
         )
 
+        # Fetch last message for each conversation in one query
+        conv_ids = [conv.id for conv in conversations]
+        last_messages = await self.msg_repo.get_last_messages_for_conversations(conv_ids)
+
         # Convert to response
         items = []
         for conv in conversations:
@@ -85,11 +91,32 @@ class ConversationService:
                 for p in conv.participants
                 if p.user_id != user_id and p.left_at is None and p.user is not None
             ]
+
+            last_msg = last_messages.get(conv.id)
+            last_message_item = None
+            if last_msg and last_msg.sender:
+                last_message_item = MessageInConversation(
+                    id=last_msg.id,
+                    conversation_id=last_msg.conversation_id,
+                    sender=UserInChat(
+                        id=last_msg.sender.id,
+                        first_name=last_msg.sender.first_name or "",
+                        last_name=last_msg.sender.last_name or "",
+                        email=last_msg.sender.email
+                    ),
+                    content=last_msg.content,
+                    reply_to_id=last_msg.reply_to_id,
+                    media=[],
+                    created_at=last_msg.created_at,
+                    edited_at=last_msg.edited_at,
+                )
+
             item = ConversationListItem(
                 id=conv.id,
                 type=conv.type,
                 name=conv.name,
                 avatar_url=conv.avatar_url,
+                last_message=last_message_item,
                 other_participants=other_participants,
                 participant_count=conv.participant_count,
                 unread_count=conv.unread_count,
@@ -502,7 +529,7 @@ class MessageService:
         if not participant:
             raise AccessDenied("User is not member of this conversation")
 
-        # Create and commit message first so it's persisted regardless of what follows
+        # Create message and update conversation's last_message_at atomically
         message = await self.msg_repo.create(
             conversation_id=conversation_id,
             sender_id=sender_id,
@@ -512,6 +539,11 @@ class MessageService:
             mentions=mentions
         )
         message_id = message.id  # capture before commit expires the object
+        await self.session.execute(
+            sql_update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(last_message_at=datetime.utcnow())
+        )
         await self.session.commit()
 
         # Create delivery statuses in a separate operation — if this table has
