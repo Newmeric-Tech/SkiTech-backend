@@ -488,6 +488,7 @@ class MessageService:
         conversation_id: UUID,
         sender_id: UUID,
         content: str,
+        tenant_id: UUID,
         reply_to_id: Optional[UUID] = None,
         mentions: Optional[dict] = None
     ) -> MessageResponse:
@@ -506,6 +507,7 @@ class MessageService:
             conversation_id=conversation_id,
             sender_id=sender_id,
             content=content,
+            tenant_id=tenant_id,
             reply_to_id=reply_to_id,
             mentions=mentions
         )
@@ -526,7 +528,10 @@ class MessageService:
                 )
             await self.session.commit()
         except Exception:
-            await self.session.rollback()  # delivery status failure is non-fatal
+            try:
+                await self.session.rollback()
+            except Exception:
+                pass  # Connection may be broken; message was already committed
 
         # Re-fetch with all relationships eagerly loaded — session expires objects
         # after commit, so accessing lazy attributes would raise MissingGreenlet
@@ -534,6 +539,8 @@ class MessageService:
             message_id=message_id,
             conversation_id=conversation_id
         )
+        if fresh_message is None:
+            raise RuntimeError(f"Message {message_id} not found after commit — possible session issue")
         return await self._message_to_response(fresh_message, sender_id)
 
     async def edit_message(

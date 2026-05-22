@@ -532,26 +532,30 @@ async def send_message(
             conversation_id=conversation_id,
             sender_id=security.user_id,
             content=request.content,
+            tenant_id=security.tenant_id,
             reply_to_id=request.reply_to_id,
             mentions=request.mentions
         )
+    except AccessDenied as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except Exception as e:
+        logger.exception("send_message service error: %s", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-        # Publish real-time event — use json.loads(message.json()) so UUID/datetime
-        # are serialized to strings before websocket.send_json() calls json.dumps()
+    # WS broadcast is fire-and-forget — must not abort the HTTP response
+    try:
         manager = get_websocket_manager()
         await publish_message_sent_event(
             manager=manager,
             conversation_id=conversation_id,
             tenant_id=security.tenant_id,
             property_id=security.property_id,
-            message_data=json.loads(message.json())
+            message_data=json.loads(message.model_dump_json())
         )
-
-        return message
-    except AccessDenied as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        logger.warning("WS broadcast failed (non-fatal): %s", e)
+
+    return message
 
 
 @router.get(

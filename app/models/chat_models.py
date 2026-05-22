@@ -190,11 +190,16 @@ class Message(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     """
     __tablename__ = "messages"
 
+    # Tenant isolation (denormalized from conversation for efficient filtering)
+    tenant_id: UUID = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
     # Conversation context
     conversation_id: UUID = Column(
         UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    
+
     # Sender (must be conversation participant - validated at service layer)
     sender_id: UUID = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True

@@ -455,6 +455,7 @@ class MessageRepository:
         conversation_id: UUID,
         sender_id: UUID,
         content: str,
+        tenant_id: UUID,
         reply_to_id: Optional[UUID] = None,
         mentions: Optional[dict] = None
     ) -> Message:
@@ -463,6 +464,7 @@ class MessageRepository:
             conversation_id=conversation_id,
             sender_id=sender_id,
             content=content,
+            tenant_id=tenant_id,
             reply_to_id=reply_to_id,
             mentions=mentions
         )
