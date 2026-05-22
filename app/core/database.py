@@ -114,11 +114,22 @@ async def init_db() -> None:
         "ALTER TABLE conversation_participants ADD COLUMN IF NOT EXISTS is_muted BOOLEAN NOT NULL DEFAULT false;",
         "ALTER TABLE conversation_participants ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMP;",
         "ALTER TABLE conversation_participants ADD COLUMN IF NOT EXISTS last_read_message_id UUID;",
+        "ALTER TABLE messages ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE;",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP;",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_count INTEGER NOT NULL DEFAULT 0;",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS mentions JSONB;",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id UUID;",
+        # message_media columns added after initial deployment
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS thumbnail_key VARCHAR(512);",
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS original_filename VARCHAR(255) NOT NULL DEFAULT '';",
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS file_size_bytes INTEGER NOT NULL DEFAULT 0;",
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100) NOT NULL DEFAULT '';",
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS width INTEGER;",
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS height INTEGER;",
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS duration_seconds FLOAT;",
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS is_scanned BOOLEAN NOT NULL DEFAULT false;",
+        "ALTER TABLE message_media ADD COLUMN IF NOT EXISTS is_safe BOOLEAN NOT NULL DEFAULT true;",
         # ENUM column type fixes — columns were created as VARCHAR before ENUM types existed.
         # Each USING clause casts existing VARCHAR values to the ENUM type.
         # These are no-ops if the column is already the correct ENUM type (caught by except).
