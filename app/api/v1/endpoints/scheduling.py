@@ -3,6 +3,7 @@ Employee Scheduling Endpoints - app/api/v1/endpoints/scheduling.py
 """
 
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -353,11 +354,17 @@ async def get_recommendations(
 
 @router.get("/dashboard/manager", response_model=ManagerDashboardData)
 async def get_manager_dashboard(
-    week_start: datetime,
-    week_end: datetime,
+    week_start: Optional[datetime] = None,
+    week_end: Optional[datetime] = None,
     service: SchedulingService = Depends(get_scheduling_service)
 ):
-    """Get manager dashboard data"""
+    """Get manager dashboard data (defaults to current week)"""
+    from datetime import timedelta
+    if week_start is None:
+        today = datetime.utcnow()
+        week_start = today - timedelta(days=today.weekday())
+    if week_end is None:
+        week_end = week_start + timedelta(days=6)
     try:
         data = await service.get_manager_dashboard_data(week_start, week_end)
         return data
@@ -373,6 +380,23 @@ async def get_staff_dashboard(
     """Get staff dashboard data"""
     try:
         data = await service.get_staff_dashboard_data(UUID(employee_id))
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/me", response_model=StaffDashboardData)
+async def get_my_schedule(
+    service: SchedulingService = Depends(get_scheduling_service),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the current user's own scheduling dashboard.
+    Returns pending replacement requests where the user is involved,
+    plus their current week schedule.
+    """
+    try:
+        data = await service.get_staff_dashboard_data(current_user.id)
         return data
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
