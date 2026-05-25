@@ -25,10 +25,10 @@ from app.schemas.scheduling import (
 class SchedulingService:
     """Service for managing employee scheduling, shifts, and replacements"""
 
-    def __init__(self, db: AsyncSession, tenant_id: UUID, property_id: UUID, user_id: UUID):
+    def __init__(self, db: AsyncSession, tenant_id: UUID, property_id: Optional[UUID], user_id: UUID):
         self.db = db
         self.tenant_id = tenant_id
-        self.property_id = property_id
+        self.property_id = property_id  # None → tenant-wide (owner/admin)
         self.user_id = user_id
 
     # ─────────────────────────────────────────────────────────────
@@ -319,18 +319,18 @@ class SchedulingService:
     # AI Recommendations
     # ─────────────────────────────────────────────────────────────
 
-    async def get_available_employees(self, shift_date: datetime, 
+    async def get_available_employees(self, shift_date: datetime,
                                       start_time: str, end_time: str,
                                       department_id: Optional[UUID] = None) -> List[Employee]:
         """Get employees available for a shift"""
         # Build query for available employees
-        stmt = select(Employee).where(
-            and_(
-                Employee.property_id == self.property_id,
-                Employee.tenant_id == self.tenant_id,
-                Employee.is_active == True
-            )
-        )
+        conditions = [
+            Employee.tenant_id == self.tenant_id,
+            Employee.is_active == True,
+        ]
+        if self.property_id is not None:
+            conditions.append(Employee.property_id == self.property_id)
+        stmt = select(Employee).where(and_(*conditions))
         
         if department_id:
             stmt = stmt.where(Employee.department_id == department_id)
@@ -427,45 +427,43 @@ class SchedulingService:
     async def get_manager_dashboard_data(self, week_start: datetime, 
                                         week_end: datetime) -> ManagerDashboardData:
         """Get manager dashboard summary"""
-        # Get all employees
-        stmt = select(Employee).where(
-            and_(
-                Employee.property_id == self.property_id,
-                Employee.tenant_id == self.tenant_id,
-                Employee.is_active == True
-            )
-        )
+        # Get all employees — owner (no property_id) sees whole tenant
+        emp_conditions = [
+            Employee.tenant_id == self.tenant_id,
+            Employee.is_active == True,
+        ]
+        if self.property_id is not None:
+            emp_conditions.append(Employee.property_id == self.property_id)
+        stmt = select(Employee).where(and_(*emp_conditions))
         result = await self.db.execute(stmt)
         all_employees = result.scalars().all()
         employee_count = len(all_employees)
-        
+
         # Get scheduled employees for week
-        stmt = select(WeeklySchedule).where(
-            and_(
-                WeeklySchedule.property_id == self.property_id,
-                WeeklySchedule.week_start_date >= week_start,
-                WeeklySchedule.week_end_date <= week_end,
-                WeeklySchedule.status.in_(["assigned", "published"])
-            )
-        )
+        sched_conditions = [
+            WeeklySchedule.week_start_date >= week_start,
+            WeeklySchedule.week_end_date <= week_end,
+            WeeklySchedule.status.in_(["assigned", "published"]),
+        ]
+        if self.property_id is not None:
+            sched_conditions.append(WeeklySchedule.property_id == self.property_id)
+        stmt = select(WeeklySchedule).where(and_(*sched_conditions))
         result = await self.db.execute(stmt)
         schedules = result.scalars().all()
         scheduled_count = len(set(s.employee_id for s in schedules))
         unscheduled_count = employee_count - scheduled_count
-        
+
         # Get critical actions
         critical_actions = []
         for schedule in schedules:
             conflicts = await self.detect_schedule_conflicts(schedule.id)
             critical_actions.extend(conflicts.conflicts)
-        
+
         # Get pending replacements
-        stmt = select(ReplacementRequest).where(
-            and_(
-                ReplacementRequest.property_id == self.property_id,
-                ReplacementRequest.status.in_(["pending", "accepted"])
-            )
-        )
+        repl_conditions = [ReplacementRequest.status.in_(["pending", "accepted"])]
+        if self.property_id is not None:
+            repl_conditions.append(ReplacementRequest.property_id == self.property_id)
+        stmt = select(ReplacementRequest).where(and_(*repl_conditions))
         result = await self.db.execute(stmt)
         pending_requests = result.scalars().all()
         

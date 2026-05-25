@@ -36,16 +36,14 @@ async def get_scheduling_service(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_obj)
 ) -> SchedulingService:
-    """Get scheduling service instance with current context"""
-    if not current_user.property_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must be assigned to a property"
-        )
+    """Get scheduling service instance with current context.
+    property_id may be None for owners/admins who manage all properties —
+    the service handles this by falling back to tenant-wide queries.
+    """
     return SchedulingService(
         db=db,
         tenant_id=current_user.tenant_id,
-        property_id=current_user.property_id,
+        property_id=current_user.property_id,  # None is OK for owners
         user_id=current_user.id
     )
 
