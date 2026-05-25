@@ -242,6 +242,12 @@ class Employee(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     property = relationship("Property", back_populates="employees")
     department = relationship("Department", back_populates="employees")
 
+    # Scheduling back-refs
+    availability      = relationship("EmployeeAvailability", back_populates="employee", foreign_keys="EmployeeAvailability.employee_id", cascade="all, delete-orphan")
+    schedules         = relationship("WeeklySchedule",       back_populates="employee", foreign_keys="WeeklySchedule.employee_id",       cascade="all, delete-orphan")
+    shift_assignments = relationship("ShiftAssignment",      back_populates="employee", foreign_keys="ShiftAssignment.employee_id",      cascade="all, delete-orphan")
+    skills            = relationship("EmployeeSkill",        back_populates="employee", foreign_keys="EmployeeSkill.employee_id",        cascade="all, delete-orphan")
+
 
 # ===========================================================
 # DEPARTMENTS
@@ -681,4 +687,448 @@ class AuditLog(Base, UUIDMixin, TimestampMixin):
     severity = Column(String(20), default="low")  # low / medium / high / critical
     status = Column(String(50), default="success")
     error_message = Column(Text)
+
+
+# ===========================================================
+# EMPLOYEE SCHEDULING  (migration 002_add_scheduling_tables)
+# ===========================================================
+
+class EmployeeAvailability(Base, UUIDMixin):
+    __tablename__ = "employee_availability"
+
+    tenant_id    = Column(UUID(as_uuid=True), ForeignKey("tenants.id",    ondelete="CASCADE"), nullable=False, index=True)
+    property_id  = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_id  = Column(UUID(as_uuid=True), ForeignKey("employees.id",  ondelete="CASCADE"), nullable=False, index=True)
+    availability_date = Column(DateTime, nullable=False, index=True)
+    status       = Column(String(50), nullable=False)   # available / unavailable / partial
+    reason       = Column(String(255), nullable=True)
+    notes        = Column(Text, nullable=True)
+    created_at   = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at   = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("employee_id", "availability_date", name="uq_employee_availability_date"),
+    )
+
+    employee = relationship("Employee", back_populates="availability", foreign_keys=[employee_id])
+
+
+class WeeklySchedule(Base, UUIDMixin):
+    __tablename__ = "weekly_schedules"
+
+    tenant_id       = Column(UUID(as_uuid=True), ForeignKey("tenants.id",     ondelete="CASCADE"), nullable=False, index=True)
+    property_id     = Column(UUID(as_uuid=True), ForeignKey("properties.id",  ondelete="CASCADE"), nullable=False, index=True)
+    employee_id     = Column(UUID(as_uuid=True), ForeignKey("employees.id",   ondelete="CASCADE"), nullable=False, index=True)
+    week_start_date = Column(DateTime, nullable=False, index=True)
+    week_end_date   = Column(DateTime, nullable=False)
+    department_id   = Column(UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
+    status          = Column(String(50), nullable=False, default="draft", index=True)
+    assigned_by     = Column(UUID(as_uuid=True), ForeignKey("users.id",       ondelete="SET NULL"), nullable=True)
+    assigned_at     = Column(DateTime, nullable=True)
+    published_at    = Column(DateTime, nullable=True)
+    created_at      = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at      = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("employee_id", "week_start_date", name="uq_employee_weekly_schedule"),
+    )
+
+    employee        = relationship("Employee", back_populates="schedules",  foreign_keys=[employee_id])
+    shift_assignments = relationship("ShiftAssignment", back_populates="schedule", cascade="all, delete-orphan")
+
+
+class ShiftAssignment(Base, UUIDMixin):
+    __tablename__ = "shift_assignments"
+
+    tenant_id        = Column(UUID(as_uuid=True), ForeignKey("tenants.id",         ondelete="CASCADE"), nullable=False)
+    property_id      = Column(UUID(as_uuid=True), ForeignKey("properties.id",      ondelete="CASCADE"), nullable=False)
+    schedule_id      = Column(UUID(as_uuid=True), ForeignKey("weekly_schedules.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_id      = Column(UUID(as_uuid=True), ForeignKey("employees.id",        ondelete="CASCADE"), nullable=False, index=True)
+    shift_date       = Column(DateTime, nullable=False, index=True)
+    shift_start_time = Column(String(5), nullable=False)
+    shift_end_time   = Column(String(5), nullable=False)
+    shift_type       = Column(String(50), nullable=True)
+    status           = Column(String(50), nullable=False, default="scheduled", index=True)
+    created_at       = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at       = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    schedule             = relationship("WeeklySchedule", back_populates="shift_assignments")
+    employee             = relationship("Employee", back_populates="shift_assignments", foreign_keys=[employee_id])
+    replacement_requests = relationship("ReplacementRequest", back_populates="shift_assignment", cascade="all, delete-orphan")
+
+
+class ReplacementRequest(Base, UUIDMixin):
+    __tablename__ = "replacement_requests"
+
+    tenant_id               = Column(UUID(as_uuid=True), ForeignKey("tenants.id",          ondelete="CASCADE"),  nullable=False)
+    property_id             = Column(UUID(as_uuid=True), ForeignKey("properties.id",       ondelete="CASCADE"),  nullable=False)
+    shift_assignment_id     = Column(UUID(as_uuid=True), ForeignKey("shift_assignments.id", ondelete="CASCADE"), nullable=False)
+    original_employee_id    = Column(UUID(as_uuid=True), ForeignKey("employees.id",        ondelete="CASCADE"),  nullable=False, index=True)
+    replacement_employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id",        ondelete="SET NULL"), nullable=True,  index=True)
+    request_date            = Column(DateTime, nullable=False)
+    shift_date              = Column(DateTime, nullable=False, index=True)
+    shift_start_time        = Column(String(5), nullable=False)
+    shift_end_time          = Column(String(5), nullable=False)
+    reason                  = Column(String(255), nullable=True)
+    priority                = Column(String(50), nullable=False, default="normal", index=True)
+    request_type            = Column(String(50), nullable=False)
+    status                  = Column(String(50), nullable=False, default="pending", index=True)
+    ai_recommended          = Column(Boolean, nullable=False, default=False)
+    created_by              = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True)
+    responded_by            = Column(UUID(as_uuid=True), ForeignKey("employees.id",  ondelete="SET NULL"), nullable=True)
+    responded_at            = Column(DateTime, nullable=True)
+    response_reason         = Column(Text, nullable=True)
+    created_at              = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at              = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    shift_assignment     = relationship("ShiftAssignment", back_populates="replacement_requests")
+    original_employee    = relationship("Employee", foreign_keys=[original_employee_id])
+    replacement_employee = relationship("Employee", foreign_keys=[replacement_employee_id])
+    responses            = relationship("ShiftResponse", back_populates="replacement_request", cascade="all, delete-orphan")
+
+
+class ShiftResponse(Base, UUIDMixin):
+    __tablename__ = "shift_responses"
+
+    tenant_id              = Column(UUID(as_uuid=True), ForeignKey("tenants.id",             ondelete="CASCADE"), nullable=False)
+    property_id            = Column(UUID(as_uuid=True), ForeignKey("properties.id",          ondelete="CASCADE"), nullable=False)
+    replacement_request_id = Column(UUID(as_uuid=True), ForeignKey("replacement_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_id            = Column(UUID(as_uuid=True), ForeignKey("employees.id",           ondelete="CASCADE"), nullable=False, index=True)
+    response_type          = Column(String(50), nullable=False)   # accept / decline
+    reason                 = Column(Text, nullable=True)
+    responded_at           = Column(DateTime, nullable=False, server_default=func.now())
+    created_at             = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("replacement_request_id", "employee_id", name="uq_shift_response"),
+    )
+
+    replacement_request = relationship("ReplacementRequest", back_populates="responses")
+    employee            = relationship("Employee", foreign_keys=[employee_id])
+
+
+class EmployeeSkill(Base, UUIDMixin):
+    __tablename__ = "employee_skills"
+
+    tenant_id           = Column(UUID(as_uuid=True), ForeignKey("tenants.id",   ondelete="CASCADE"), nullable=False)
+    employee_id         = Column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    skill_name          = Column(String(100), nullable=False, index=True)
+    proficiency_level   = Column(String(50), nullable=True)
+    years_of_experience = Column(Integer, nullable=True)
+    verified            = Column(Boolean, nullable=False, default=False)
+    created_at          = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at          = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    employee = relationship("Employee", back_populates="skills", foreign_keys=[employee_id])
+
+
+# ===========================================================
+# ERROR & COMPLAINT LOG  (migration 003_add_complaint_tables)
+# ===========================================================
+
+class Complaint(Base, UUIDMixin):
+    __tablename__ = "complaints"
+
+    tenant_id    = Column(UUID(as_uuid=True), ForeignKey("tenants.id",    ondelete="CASCADE"),  nullable=False, index=True)
+    property_id  = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"),  nullable=False, index=True)
+    created_by   = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True,  index=True)
+    assigned_to  = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True,  index=True)
+    assigned_by  = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True)
+    resolved_by  = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True)
+
+    title            = Column(String(255), nullable=False)
+    description      = Column(Text, nullable=False)
+    category         = Column(String(100), nullable=False, index=True)
+    complaint_type   = Column(String(50), nullable=False, index=True)
+    priority         = Column(String(20), nullable=False, default="medium", index=True)
+    status           = Column(String(50), nullable=False, default="open",   index=True)
+
+    room_number      = Column(String(50), nullable=True)
+    location         = Column(String(255), nullable=True)
+
+    assigned_at      = Column(DateTime, nullable=True)
+    resolved_at      = Column(DateTime, nullable=True, index=True)
+    resolution_notes = Column(Text, nullable=True)
+
+    attachment_count = Column(Integer, nullable=False, default=0)
+    comment_count    = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    updated_at = Column(DateTime, nullable=False, server_default=func.now())
+    deleted_at = Column(DateTime, nullable=True)
+
+    creator     = relationship("User", foreign_keys=[created_by])
+    assignee    = relationship("User", foreign_keys=[assigned_to])
+    assigner    = relationship("User", foreign_keys=[assigned_by])
+    resolver    = relationship("User", foreign_keys=[resolved_by])
+    comments    = relationship("ComplaintComment",    back_populates="complaint", cascade="all, delete-orphan")
+    assignments = relationship("ComplaintAssignment", back_populates="complaint", cascade="all, delete-orphan")
+    attachments = relationship("ComplaintAttachment", back_populates="complaint", cascade="all, delete-orphan")
+
+
+class ComplaintComment(Base, UUIDMixin):
+    __tablename__ = "complaint_comments"
+
+    tenant_id    = Column(UUID(as_uuid=True), ForeignKey("tenants.id",    ondelete="CASCADE"),  nullable=False)
+    complaint_id = Column(UUID(as_uuid=True), ForeignKey("complaints.id", ondelete="CASCADE"),  nullable=False, index=True)
+    user_id      = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True,  index=True)
+
+    comment          = Column(Text, nullable=False)
+    is_internal      = Column(Boolean, nullable=False, default=False)
+    attachment_count = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    updated_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    complaint   = relationship("Complaint", back_populates="comments")
+    user        = relationship("User", foreign_keys=[user_id])
+    attachments = relationship("ComplaintCommentAttachment", back_populates="comment", cascade="all, delete-orphan")
+
+
+class ComplaintAssignment(Base, UUIDMixin):
+    __tablename__ = "complaint_assignments"
+
+    tenant_id    = Column(UUID(as_uuid=True), ForeignKey("tenants.id",    ondelete="CASCADE"),  nullable=False)
+    complaint_id = Column(UUID(as_uuid=True), ForeignKey("complaints.id", ondelete="CASCADE"),  nullable=False, index=True)
+    assigned_to  = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="CASCADE"),  nullable=False, index=True)
+    assigned_by  = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True)
+
+    assigned_at  = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    completed_at = Column(DateTime, nullable=True)
+    notes        = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("complaint_id", "assigned_to", name="uq_complaint_assignment"),
+    )
+
+    complaint = relationship("Complaint", back_populates="assignments")
+    assignee  = relationship("User", foreign_keys=[assigned_to])
+    assigner  = relationship("User", foreign_keys=[assigned_by])
+
+
+class ComplaintAttachment(Base, UUIDMixin):
+    __tablename__ = "complaint_attachments"
+
+    tenant_id    = Column(UUID(as_uuid=True), ForeignKey("tenants.id",    ondelete="CASCADE"),  nullable=False)
+    complaint_id = Column(UUID(as_uuid=True), ForeignKey("complaints.id", ondelete="CASCADE"),  nullable=False, index=True)
+    uploaded_by  = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True,  index=True)
+
+    file_name = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer, nullable=True)
+    file_type = Column(String(50), nullable=True)
+
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    complaint = relationship("Complaint", back_populates="attachments")
+    uploader  = relationship("User", foreign_keys=[uploaded_by])
+
+
+class ComplaintCommentAttachment(Base, UUIDMixin):
+    __tablename__ = "complaint_comment_attachments"
+
+    tenant_id   = Column(UUID(as_uuid=True), ForeignKey("tenants.id",          ondelete="CASCADE"),  nullable=False)
+    comment_id  = Column(UUID(as_uuid=True), ForeignKey("complaint_comments.id", ondelete="CASCADE"), nullable=False, index=True)
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id",             ondelete="SET NULL"), nullable=True,  index=True)
+
+    file_name = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer, nullable=True)
+    file_type = Column(String(50), nullable=True)
+
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    comment  = relationship("ComplaintComment", back_populates="attachments")
+    uploader = relationship("User", foreign_keys=[uploaded_by])
+
+
+# ===========================================================
+# DOCUMENT MANAGEMENT SYSTEM  (migration 004_add_document_management_tables)
+# ===========================================================
+
+class Document(Base, UUIDMixin):
+    __tablename__ = "documents"
+
+    tenant_id                    = Column(UUID(as_uuid=True), ForeignKey("tenants.id",    ondelete="CASCADE"),  nullable=False, index=True)
+    property_id                  = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"),  nullable=True,  index=True)
+    uploaded_by                  = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True,  index=True)
+    owner_id                     = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True)
+    assigned_compliance_reviewer = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True)
+    deleted_by                   = Column(UUID(as_uuid=True), ForeignKey("users.id",      ondelete="SET NULL"), nullable=True)
+
+    title          = Column(String(255), nullable=False)
+    description    = Column(Text, nullable=True)
+    category       = Column(String(100), nullable=False, index=True)
+    department     = Column(String(100), nullable=True)
+    file_name      = Column(String(500), nullable=False)
+    file_path      = Column(String(1000), nullable=False)
+    file_size      = Column(Integer, nullable=True)
+    file_type      = Column(String(50), nullable=True)
+    file_extension = Column(String(20), nullable=True)
+    tags           = Column(String(500), nullable=True)
+
+    access_scope        = Column(String(50),  nullable=False, default="organization_wide", index=True)
+    status              = Column(String(50),  nullable=False, default="pending_review", index=True)
+    approval_status     = Column(String(50),  nullable=False, default="pending")
+    is_confidential     = Column(Boolean,     nullable=False, default=False)
+    retention_period    = Column(Integer,     nullable=True)
+    expiry_date         = Column(DateTime,    nullable=True)
+    requires_signature  = Column(Boolean,     nullable=False, default=False)
+
+    created_at    = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    updated_at    = Column(DateTime, nullable=True)
+    last_modified = Column(DateTime, nullable=True)
+    deleted_at    = Column(DateTime, nullable=True)
+
+    uploader   = relationship("User", foreign_keys=[uploaded_by])
+    owner      = relationship("User", foreign_keys=[owner_id])
+    reviewer   = relationship("User", foreign_keys=[assigned_compliance_reviewer])
+    versions   = relationship("DocumentVersion",     back_populates="document", cascade="all, delete-orphan")
+    reviews    = relationship("DocumentReview",      back_populates="document", cascade="all, delete-orphan")
+    approvals  = relationship("DocumentApproval",    back_populates="document", cascade="all, delete-orphan")
+    shares     = relationship("DocumentShare",       back_populates="document", cascade="all, delete-orphan")
+    signatures = relationship("DocumentSignature",   back_populates="document", cascade="all, delete-orphan")
+    activity_logs = relationship("DocumentActivityLog", back_populates="document", cascade="all, delete-orphan")
+
+
+class DocumentVersion(Base, UUIDMixin):
+    __tablename__ = "document_versions"
+
+    document_id        = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"),  nullable=False, index=True)
+    tenant_id          = Column(UUID(as_uuid=True), ForeignKey("tenants.id",   ondelete="CASCADE"),  nullable=False)
+    uploaded_by        = Column(UUID(as_uuid=True), ForeignKey("users.id",     ondelete="SET NULL"), nullable=True)
+    version_number     = Column(Integer, nullable=False)
+    file_path          = Column(String(1000), nullable=False)
+    file_size          = Column(Integer, nullable=True)
+    change_description = Column(Text, nullable=True)
+    created_at         = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    updated_at         = Column(DateTime, nullable=True)
+
+    document  = relationship("Document",  back_populates="versions")
+    uploader  = relationship("User",      foreign_keys=[uploaded_by])
+
+
+class DocumentReview(Base, UUIDMixin):
+    __tablename__ = "document_reviews"
+
+    document_id              = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"),  nullable=False, index=True)
+    tenant_id                = Column(UUID(as_uuid=True), ForeignKey("tenants.id",   ondelete="CASCADE"),  nullable=False)
+    reviewer_id              = Column(UUID(as_uuid=True), ForeignKey("users.id",     ondelete="SET NULL"), nullable=True,  index=True)
+    reviewer_role            = Column(String(100), nullable=True)
+    review_status            = Column(String(50),  nullable=False, default="pending", index=True)
+    review_priority          = Column(String(50),  nullable=False, default="medium")
+    comments                 = Column(Text, nullable=True)
+    rejection_reason         = Column(Text, nullable=True)
+    assigned_at              = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    review_started_at        = Column(DateTime, nullable=True)
+    completed_at             = Column(DateTime, nullable=True)
+    requires_additional_info = Column(Boolean, nullable=False, default=False)
+    additional_info_request  = Column(Text, nullable=True)
+    created_at               = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at               = Column(DateTime, nullable=True)
+
+    document = relationship("Document", back_populates="reviews")
+    reviewer = relationship("User",     foreign_keys=[reviewer_id])
+
+
+class DocumentApproval(Base, UUIDMixin):
+    __tablename__ = "document_approvals"
+
+    document_id     = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"),  nullable=False, index=True)
+    tenant_id       = Column(UUID(as_uuid=True), ForeignKey("tenants.id",   ondelete="CASCADE"),  nullable=False)
+    approver_id     = Column(UUID(as_uuid=True), ForeignKey("users.id",     ondelete="SET NULL"), nullable=True,  index=True)
+    approver_role   = Column(String(100), nullable=True)
+    approval_status = Column(String(50),  nullable=False, default="pending", index=True)
+    approval_reason = Column(Text, nullable=True)
+    conditions      = Column(JSONB, nullable=True)
+    assigned_at     = Column(DateTime, nullable=False, server_default=func.now())
+    decided_at      = Column(DateTime, nullable=True)
+    created_at      = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at      = Column(DateTime, nullable=True)
+
+    document = relationship("Document", back_populates="approvals")
+    approver = relationship("User",     foreign_keys=[approver_id])
+
+
+class DocumentShare(Base, UUIDMixin):
+    __tablename__ = "document_shares"
+
+    document_id              = Column(UUID(as_uuid=True), ForeignKey("documents.id",    ondelete="CASCADE"),  nullable=False, index=True)
+    tenant_id                = Column(UUID(as_uuid=True), ForeignKey("tenants.id",      ondelete="CASCADE"),  nullable=False)
+    shared_with_user_id      = Column(UUID(as_uuid=True), ForeignKey("users.id",        ondelete="CASCADE"),  nullable=True,  index=True)
+    shared_with_department_id= Column(UUID(as_uuid=True), ForeignKey("departments.id",  ondelete="CASCADE"),  nullable=True,  index=True)
+    shared_by                = Column(UUID(as_uuid=True), ForeignKey("users.id",        ondelete="SET NULL"), nullable=True)
+    permission_level         = Column(String(50),  nullable=False, default="view")
+    shared_at                = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    expires_at               = Column(DateTime, nullable=True)
+    is_active                = Column(Boolean,  nullable=False, default=True)
+    created_at               = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at               = Column(DateTime, nullable=True)
+
+    document   = relationship("Document",    back_populates="shares")
+    shared_user= relationship("User",        foreign_keys=[shared_with_user_id])
+    sharer     = relationship("User",        foreign_keys=[shared_by])
+
+
+class DocumentSignature(Base, UUIDMixin):
+    __tablename__ = "document_signatures"
+
+    document_id                 = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"),  nullable=False, index=True)
+    tenant_id                   = Column(UUID(as_uuid=True), ForeignKey("tenants.id",   ondelete="CASCADE"),  nullable=False)
+    signer_id                   = Column(UUID(as_uuid=True), ForeignKey("users.id",     ondelete="SET NULL"), nullable=True,  index=True)
+    signer_name                 = Column(String(255), nullable=False)
+    signer_email                = Column(String(255), nullable=False)
+    signer_role                 = Column(String(100), nullable=True)
+    signature_status            = Column(String(50),  nullable=False, default="pending", index=True)
+    signature_image             = Column(Text, nullable=True)
+    signature_request_sent_at   = Column(DateTime, nullable=True)
+    signed_at                   = Column(DateTime, nullable=True)
+    decline_reason              = Column(Text, nullable=True)
+    created_at                  = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at                  = Column(DateTime, nullable=True)
+
+    document = relationship("Document", back_populates="signatures")
+    signer   = relationship("User",     foreign_keys=[signer_id])
+
+
+class DocumentActivityLog(Base, UUIDMixin):
+    __tablename__ = "document_activity_logs"
+
+    document_id       = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"),  nullable=False, index=True)
+    tenant_id         = Column(UUID(as_uuid=True), ForeignKey("tenants.id",   ondelete="CASCADE"),  nullable=False)
+    performed_by      = Column(UUID(as_uuid=True), ForeignKey("users.id",     ondelete="SET NULL"), nullable=True,  index=True)
+    action            = Column(String(100), nullable=False, index=True)
+    activity_type     = Column(String(50),  nullable=False)
+    performed_by_name = Column(String(255), nullable=True)
+    performed_by_role = Column(String(100), nullable=True)
+    details           = Column(JSONB, nullable=True)
+    description       = Column(Text, nullable=True)
+    ip_address        = Column(String(50),  nullable=True)
+    user_agent        = Column(String(500), nullable=True)
+    created_at        = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    updated_at        = Column(DateTime, nullable=True)
+
+    document  = relationship("Document", back_populates="activity_logs")
+    performer = relationship("User",     foreign_keys=[performed_by])
+
+
+class DocumentTemplate(Base, UUIDMixin):
+    __tablename__ = "document_templates"
+
+    tenant_id        = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    name             = Column(String(255), nullable=False)
+    description      = Column(Text, nullable=True)
+    category         = Column(String(100), nullable=False, index=True)
+    template_content = Column(Text, nullable=False)
+    required_fields  = Column(JSONB, nullable=True)
+    usage_count      = Column(Integer, nullable=False, default=0)
+    is_active        = Column(Boolean,  nullable=False, default=True)
+    created_at       = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at       = Column(DateTime, nullable=True)
+    deleted_at       = Column(DateTime, nullable=True)
     is_system_action = Column(Boolean, default=False)
