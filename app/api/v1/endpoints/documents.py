@@ -111,9 +111,16 @@ async def upload_document(
         uploaded_by=current_user.id,
         request=upload_request
     )
-    
+
+    # Owner / Super Admin uploads bypass the approval workflow — auto-approve
+    owner_roles = {"Owner", "Super Admin", "owner", "super_admin"}
+    role_name = current_user.role_obj.name if current_user.role_obj else ""
+    if role_name in owner_roles:
+        document.status = "approved"
+        document.approval_status = "approved"
+
     await db.commit()
-    
+
     return DocumentMetadataResponse.from_attributes(document)
 
 
