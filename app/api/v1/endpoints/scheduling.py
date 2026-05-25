@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_user_obj
 from app.core.database import get_db
 from app.models.models import User
 from app.schemas.scheduling import (
@@ -34,7 +34,7 @@ router = APIRouter(prefix="/scheduling", tags=["Scheduling"])
 
 async def get_scheduling_service(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_obj)
 ) -> SchedulingService:
     """Get scheduling service instance with current context"""
     if not current_user.property_id:
@@ -388,7 +388,7 @@ async def get_staff_dashboard(
 @router.get("/me", response_model=StaffDashboardData)
 async def get_my_schedule(
     service: SchedulingService = Depends(get_scheduling_service),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_obj)
 ):
     """
     Get the current user's own scheduling dashboard.

@@ -67,6 +67,60 @@ def require_roles(roles: list):
     return checker
 
 
+async def get_current_user_obj(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Decode JWT, fetch the actual User ORM object from DB and return it.
+
+    Use this dependency (instead of get_current_user) in endpoints that need
+    User attributes such as .tenant_id, .property_id, .role_obj, etc.
+
+    Existing endpoints that access user as a dict (user.get("role") etc.)
+    continue to use get_current_user unchanged.
+    """
+    payload = decode_token(credentials.credentials)
+
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+    user_id = payload.get("user_id") or payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+
+    from app.models.models import User
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.role_obj))   # NOTE: relationship is role_obj, not role
+        .where(User.id == UUID(user_id))
+    )
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    # Expose on request.state for AuditMiddleware
+    request.state.user_id    = str(user.id)
+    request.state.tenant_id  = str(user.tenant_id)
+    request.state.user_email = user.email
+    request.state.role       = user.role_obj.name if user.role_obj else ""
+
+    return user
+
+
 def require_feature(feature_name: str):
     """Route dependency: enforce that tenant's active plan includes a feature. Super Admin bypasses."""
     async def checker(

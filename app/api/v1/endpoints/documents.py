@@ -16,7 +16,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_user_obj
 from app.models.models import User, Document
 from app.schemas.document_schemas import (
     DocumentUploadRequest, DocumentMetadataResponse, DocumentDetailResponse,
@@ -50,7 +50,7 @@ async def upload_document(
     is_confidential: bool = Form(False),
     requires_signature: bool = Form(False),
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentMetadataResponse:
     """
@@ -120,7 +120,7 @@ async def upload_document(
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
 async def get_document(
     document_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentDetailResponse:
     """Get document details with all related information"""
@@ -149,7 +149,7 @@ async def get_document(
 async def list_documents(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> List[DocumentMetadataResponse]:
     """List all documents"""
@@ -168,7 +168,7 @@ async def list_documents(
 @router.post("/search", response_model=DocumentSearchResponse)
 async def search_documents(
     request: DocumentSearchRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentSearchResponse:
     """Search documents with filters"""
@@ -195,7 +195,7 @@ async def search_documents(
 async def assign_reviewer(
     document_id: str,
     request: AssignReviewerRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentReviewResponse:
     """Assign a reviewer to the document"""
@@ -234,7 +234,7 @@ async def assign_reviewer(
 async def submit_review(
     document_id: str,
     request: DocumentReviewRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentReviewResponse:
     """Submit a review for the document"""
@@ -275,7 +275,7 @@ async def submit_review(
 async def assign_approver(
     document_id: str,
     request: AssignApproverRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentApprovalResponse:
     """Assign an approver to the document"""
@@ -314,7 +314,7 @@ async def assign_approver(
 async def approve_document(
     document_id: str,
     request: DocumentApprovalRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentApprovalResponse:
     """Approve or reject the document"""
@@ -355,7 +355,7 @@ async def approve_document(
 async def share_document(
     document_id: str,
     request: DocumentShareRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentShareResponse:
     """Share a document with user or department"""
@@ -399,7 +399,7 @@ async def share_document(
 @router.delete("/share/{share_id}", response_model=DocumentOperationResponse)
 async def revoke_share(
     share_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentOperationResponse:
     """Revoke document share"""
@@ -437,7 +437,7 @@ async def revoke_share(
 async def request_signature(
     document_id: str,
     request: DocumentSignatureRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentSignatureResponse:
     """Request signature for document"""
@@ -476,7 +476,7 @@ async def request_signature(
 async def submit_signature(
     signature_id: str,
     request: DocumentSignatureSubmitRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentSignatureResponse:
     """Submit signature"""
@@ -508,7 +508,7 @@ async def submit_signature(
 async def decline_signature(
     signature_id: str,
     request: DocumentSignatureDeclineRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentSignatureResponse:
     """Decline to sign document"""
@@ -543,7 +543,7 @@ async def decline_signature(
 @router.post("/templates", response_model=DocumentTemplateResponse, status_code=status.HTTP_201_CREATED)
 async def create_template(
     request: DocumentTemplateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentTemplateResponse:
     """Create a document template"""
@@ -559,7 +559,7 @@ async def create_template(
 @router.get("/templates/{template_id}", response_model=DocumentTemplateResponse)
 async def get_template(
     template_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentTemplateResponse:
     """Get document template"""
@@ -587,7 +587,7 @@ async def get_template(
 @router.get("/templates", response_model=List[DocumentTemplateResponse])
 async def list_templates(
     category: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> List[DocumentTemplateResponse]:
     """List document templates"""
@@ -604,7 +604,7 @@ async def list_templates(
 
 @router.get("/stats", response_model=DocumentStats)
 async def get_document_stats(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentStats:
     """Get document statistics for dashboard"""

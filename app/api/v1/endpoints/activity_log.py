@@ -12,7 +12,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db, get_current_user
+from app.api.dependencies import get_db, get_current_user, get_current_user_obj
 from app.models.models import User, AuditLog
 from app.services.activity_log_service import ActivityLogService
 
@@ -51,7 +51,7 @@ def _fmt_log(log: AuditLog) -> dict:
 async def get_activity_summary(
     days: int = Query(7, ge=1, le=90, description="Number of days to summarise"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
 ):
     """
     Return activity statistics for the current user's properties.
@@ -81,7 +81,7 @@ async def list_activity_logs(
     start_date:    Optional[datetime] = Query(None),
     end_date:      Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
 ):
     """
     List activity logs with optional filters.
@@ -108,7 +108,7 @@ async def list_activity_logs(
 async def get_critical_events(
     limit: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_obj),
 ):
     """Return the most recent critical-severity events."""
     logs = await ActivityLogService.get_critical_events(
