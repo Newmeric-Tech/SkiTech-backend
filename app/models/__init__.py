@@ -13,6 +13,13 @@ from app.models.models import (
     GovernanceWorkflow, WorkflowInstance,
     AuditLog,
 )
+from app.models.chat_models import (
+    Conversation, ConversationParticipant, Message, MessageMedia, MessageDeliveryStatus,
+)
+from app.models.ranking_models import (
+    RankingCriteriaConfig, EmployeeRankingScore, EmployeeRanking,
+    RankingAuditLog, RankingInsight,
+)
 
 __all__ = [
     "Base",
@@ -24,4 +31,8 @@ __all__ = [
     "Room", "Booking", "RestaurantTable", "Order", "OrderItem",
     "GovernanceWorkflow", "WorkflowInstance",
     "AuditLog",
+    # Chat
+    "Conversation", "ConversationParticipant", "Message", "MessageMedia", "MessageDeliveryStatus",
+    # Ranking
+    "RankingCriteriaConfig", "EmployeeRankingScore", "EmployeeRanking", "RankingAuditLog", "RankingInsight",
 ]
