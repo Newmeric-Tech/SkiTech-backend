@@ -5,6 +5,8 @@ Full CRUD for Properties + nested OwnerDetails.
 Tenant isolation enforced via JWT tenant_id.
 """
 
+import asyncio
+import logging
 import shutil
 import uuid as uuid_lib
 from datetime import datetime
@@ -26,6 +28,8 @@ from app.schemas.schemas import (
     OwnerDetailsCreate, OwnerDetailsResponse, OwnerDetailsUpdate,
     PropertyCreate, PropertyResponse, PropertyUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/properties", tags=["Properties"])
 
@@ -232,6 +236,22 @@ async def get_property_image_upload_url(
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
 LOCAL_UPLOAD_DIR = Path("uploads/property_images")
 
+# Module-level S3 client — created once when credentials are present.
+_s3_client = None
+
+
+def _get_s3_client():
+    """Return a cached boto3 S3 client, creating it on first call."""
+    global _s3_client
+    if _s3_client is None:
+        _s3_client = boto3.client(
+            "s3",
+            region_name=settings.AWS_REGION,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        )
+    return _s3_client
+
 
 @router.post("/{property_id}/images/upload")
 async def upload_property_image(
@@ -247,32 +267,52 @@ async def upload_property_image(
     await _get_property_or_404(db, property_id, UUID(user["tenant_id"]))
     tenant_id = user["tenant_id"]
 
-    # Try S3 first if credentials exist
-    if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
-        try:
-            ext = (file.filename or "image").rsplit(".", 1)[-1].lower()
-            object_key = f"{tenant_id}/properties/{property_id}/{uuid_lib.uuid4().hex}.{ext}"
-            s3 = boto3.client(
-                "s3",
-                region_name=settings.AWS_REGION,
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            )
-            s3.upload_fileobj(file.file, settings.S3_PROPERTY_IMAGES_BUCKET, object_key,
-                              ExtraArgs={"ContentType": file.content_type})
-            url = f"https://{settings.S3_PROPERTY_IMAGES_BUCKET}.s3.{settings.AWS_REGION}.amazonaws.com/{object_key}"
-            return {"url": url, "storage": "s3"}
-        except Exception:
-            pass  # fall through to local storage
+    # Read file bytes once (async, non-blocking)
+    contents = await file.read()
+    ext = (file.filename or "image.jpg").rsplit(".", 1)[-1].lower() or "jpg"
+    content_type = file.content_type or "image/jpeg"
 
-    # Local fallback
+    # ── S3 path (used when AWS credentials are configured) ──
+    if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+        object_key = f"{tenant_id}/properties/{property_id}/{uuid_lib.uuid4().hex}.{ext}"
+        try:
+            s3 = _get_s3_client()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: s3.put_object(
+                    Bucket=settings.S3_PROPERTY_IMAGES_BUCKET,
+                    Key=object_key,
+                    Body=contents,
+                    ContentType=content_type,
+                ),
+            )
+            url = (
+                f"https://{settings.S3_PROPERTY_IMAGES_BUCKET}"
+                f".s3.{settings.AWS_REGION}.amazonaws.com/{object_key}"
+            )
+            logger.info("Property image uploaded to S3: %s", object_key)
+            return {"url": url, "storage": "s3"}
+        except ClientError as exc:
+            logger.error("S3 upload failed for property %s: %s", property_id, exc)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Image storage unavailable: {exc.response['Error']['Message']}",
+            )
+        except Exception as exc:
+            logger.error("Unexpected S3 error for property %s: %s", property_id, exc)
+            raise HTTPException(status_code=500, detail="Failed to upload image to S3")
+
+    # ── Local fallback (development / no S3 credentials) ───
+    logger.warning(
+        "No AWS credentials configured — saving property image locally (ephemeral on Render)"
+    )
     save_dir = LOCAL_UPLOAD_DIR / tenant_id / str(property_id)
     save_dir.mkdir(parents=True, exist_ok=True)
-    ext = (file.filename or "image").rsplit(".", 1)[-1].lower() or "jpg"
     filename = f"{uuid_lib.uuid4().hex}.{ext}"
     save_path = save_dir / filename
     with save_path.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
+        out.write(contents)
 
     url = f"{settings.BACKEND_URL}/uploads/property_images/{tenant_id}/{property_id}/{filename}"
     return {"url": url, "storage": "local"}

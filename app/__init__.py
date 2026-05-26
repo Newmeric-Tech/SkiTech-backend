@@ -46,8 +46,23 @@ async def lifespan(app: FastAPI):
     Path("uploads/property_images").mkdir(parents=True, exist_ok=True)
     Path("uploads/chat").mkdir(parents=True, exist_ok=True)
     init_websocket_manager()
-    init_storage("local", base_path="uploads/chat")
-    logger.info("WebSocket manager and chat storage initialized")
+
+    # Auto-select S3 for chat/document storage when credentials are present
+    if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
+        from app.core.config import settings as cfg
+        init_storage(
+            "s3",
+            access_key=cfg.AWS_ACCESS_KEY_ID,
+            secret_key=cfg.AWS_SECRET_ACCESS_KEY,
+            bucket_name=cfg.S3_CHAT_BUCKET,
+            region=cfg.AWS_REGION,
+        )
+        logger.info("Chat storage: S3 (bucket=%s)", cfg.S3_CHAT_BUCKET)
+    else:
+        init_storage("local", base_path="uploads/chat")
+        logger.info("Chat storage: local (no AWS credentials configured)")
+
+    logger.info("WebSocket manager and storage initialized")
     yield
     await close_db()
     logger.info("Shutdown complete")

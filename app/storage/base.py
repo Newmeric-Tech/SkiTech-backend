@@ -4,238 +4,153 @@ Storage Abstraction Layer - app/storage/base.py
 Defines abstract storage interface and implementations for local and S3 storage.
 
 Supports:
-- Local file storage (current implementation)
-- AWS S3 backend (future, drop-in replacement)
-- Easy migration without code changes
+- Local file storage (development / fallback)
+- AWS S3 backend (production)
 
 API:
-- upload_file(file_bytes, path): Upload file
-- download_file(path): Download file
-- delete_file(path): Delete file
-- generate_signed_url(path): Get temporary download URL
+- upload_file(file_bytes, path, content_type) -> storage_key
+- download_file(path) -> bytes
+- delete_file(path) -> bool
+- file_exists(path) -> bool
+- get_file_size(path) -> int | None
+- generate_signed_url(path, expiration_seconds) -> str
 """
 
+import asyncio
+import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Optional
-from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 
 class StorageBackend(ABC):
-    """Abstract storage backend interface"""
+    """Abstract storage backend interface."""
 
     @abstractmethod
     async def upload_file(
         self,
         file_bytes: bytes,
         path: str,
-        content_type: str = "application/octet-stream"
+        content_type: str = "application/octet-stream",
     ) -> str:
-        """
-        Upload file to storage.
-        
-        Args:
-            file_bytes: File content
-            path: Destination path (e.g., "conversations/{conv_id}/messages/{msg_id}/file.pdf")
-            content_type: MIME type
-            
-        Returns:
-            Storage key/path for retrieval
-        """
-        pass
+        """Upload file and return storage key."""
+        ...
 
     @abstractmethod
     async def download_file(self, path: str) -> bytes:
-        """
-        Download file from storage.
-        
-        Args:
-            path: Storage path
-            
-        Returns:
-            File content as bytes
-        """
-        pass
+        """Download file and return bytes."""
+        ...
 
     @abstractmethod
     async def delete_file(self, path: str) -> bool:
-        """
-        Delete file from storage.
-        
-        Args:
-            path: Storage path
-            
-        Returns:
-            True if deleted, False if not found
-        """
-        pass
+        """Delete file. Returns True if deleted, False if not found."""
+        ...
 
     @abstractmethod
     async def file_exists(self, path: str) -> bool:
-        """Check if file exists in storage"""
-        pass
+        """Return True if the file exists."""
+        ...
 
     @abstractmethod
     async def get_file_size(self, path: str) -> Optional[int]:
-        """Get file size in bytes, or None if not found"""
-        pass
+        """Return file size in bytes, or None if not found."""
+        ...
 
     @abstractmethod
     async def generate_signed_url(
         self,
         path: str,
-        expiration_seconds: int = 3600
+        expiration_seconds: int = 3600,
     ) -> str:
-        """
-        Generate temporary download URL.
-        
-        Args:
-            path: Storage path
-            expiration_seconds: URL expiration time
-            
-        Returns:
-            Signed URL for download
-        """
-        pass
+        """Return a temporary URL for downloading the file."""
+        ...
 
+
+# ── Local Storage ─────────────────────────────────────────────────────────────
 
 class LocalStorageBackend(StorageBackend):
     """
-    Local file system storage implementation.
-    
-    Stores files in /var/chat_storage or configured directory.
-    Used as default until S3 is configured.
+    Local file-system storage.
+    Used for development and as a fallback when S3 is not configured.
+    NOTE: ephemeral on Render free tier — do not use in production.
     """
 
-    def __init__(self, base_path: str = "/var/chat_storage"):
-        """
-        Initialize local storage.
-        
-        Args:
-            base_path: Base directory for file storage
-        """
+    def __init__(self, base_path: str = "uploads/chat"):
         self.base_path = base_path
-        self._ensure_directory(base_path)
+        os.makedirs(base_path, exist_ok=True)
 
-    def _ensure_directory(self, path: str) -> None:
-        """Ensure directory exists, create if needed"""
-        import os
-        os.makedirs(path, exist_ok=True)
-
-    def _get_full_path(self, path: str) -> str:
-        """Get full file path"""
-        import os
-        # Prevent path traversal attacks
+    def _full(self, path: str) -> str:
         if ".." in path:
-            raise ValueError("Invalid path: cannot contain '..'")
+            raise ValueError("Path traversal not allowed")
         return os.path.join(self.base_path, path)
 
     async def upload_file(
         self,
         file_bytes: bytes,
         path: str,
-        content_type: str = "application/octet-stream"
+        content_type: str = "application/octet-stream",
     ) -> str:
-        """
-        Upload file to local storage.
-        
-        Path structure:
-        conversations/{conversation_id}/messages/{message_id}/filename
-        """
-        import os
-        
-        full_path = self._get_full_path(path)
-        
-        # Ensure parent directory exists
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        
-        # Write file
-        with open(full_path, "wb") as f:
-            f.write(file_bytes)
-        
-        return path  # Return relative path
+        full = self._full(path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as fh:
+            fh.write(file_bytes)
+        return path
 
     async def download_file(self, path: str) -> bytes:
-        """Download file from local storage"""
-        full_path = self._get_full_path(path)
-        
-        if not os.path.exists(full_path):
+        full = self._full(path)
+        if not os.path.exists(full):
             raise FileNotFoundError(f"File not found: {path}")
-        
-        with open(full_path, "rb") as f:
-            return f.read()
+        with open(full, "rb") as fh:
+            return fh.read()
 
     async def delete_file(self, path: str) -> bool:
-        """Delete file from local storage"""
-        import os
-        
-        full_path = self._get_full_path(path)
-        
-        if not os.path.exists(full_path):
+        full = self._full(path)
+        if not os.path.exists(full):
             return False
-        
-        os.remove(full_path)
+        os.remove(full)
         return True
 
     async def file_exists(self, path: str) -> bool:
-        """Check if file exists"""
-        import os
-        full_path = self._get_full_path(path)
-        return os.path.exists(full_path)
+        return os.path.exists(self._full(path))
 
     async def get_file_size(self, path: str) -> Optional[int]:
-        """Get file size"""
-        import os
-        full_path = self._get_full_path(path)
-        
-        if not os.path.exists(full_path):
-            return None
-        
-        return os.path.getsize(full_path)
+        full = self._full(path)
+        return os.path.getsize(full) if os.path.exists(full) else None
 
     async def generate_signed_url(
         self,
         path: str,
-        expiration_seconds: int = 3600
+        expiration_seconds: int = 3600,
     ) -> str:
-        """
-        Generate temporary download URL for local storage.
-        
-        For local storage, returns a base64-encoded path that backend validates.
-        In production with S3, this would be a real signed URL.
-        
-        TODO: Implement proper temporary token system with database tracking
-        """
         import base64
         import json
         from datetime import datetime, timedelta
-        
-        # Create token payload
+
         payload = {
             "path": path,
-            "expires_at": (datetime.utcnow() + timedelta(seconds=expiration_seconds)).isoformat()
+            "expires_at": (
+                datetime.utcnow() + timedelta(seconds=expiration_seconds)
+            ).isoformat(),
         }
-        
-        # Encode as JSON and base64
-        json_str = json.dumps(payload)
-        token = base64.b64encode(json_str.encode()).decode()
-        
-        # In real implementation, store token in Redis with expiration
-        # For now, return base64 encoded path
+        token = base64.b64encode(json.dumps(payload).encode()).decode()
         return f"/api/v1/chat/media/download/{token}"
 
 
+# ── S3 Storage ────────────────────────────────────────────────────────────────
+
 class S3StorageBackend(StorageBackend):
     """
-    AWS S3 storage implementation (future).
-    
-    Configuration via environment:
-    - AWS_ACCESS_KEY_ID
-    - AWS_SECRET_ACCESS_KEY
-    - AWS_S3_BUCKET_NAME
-    - AWS_S3_REGION
-    
-    NOTE: Drop-in replacement for LocalStorageBackend
-    No code changes needed except configuration
+    AWS S3 storage backend for production use.
+
+    Required env vars (set in Render dashboard):
+        AWS_ACCESS_KEY_ID
+        AWS_SECRET_ACCESS_KEY
+        AWS_REGION              (default: us-east-1)
+
+    For chat/documents the bucket is private — access is via pre-signed URLs.
+    For property images a separate public bucket is used (see properties.py).
     """
 
     def __init__(
@@ -243,114 +158,148 @@ class S3StorageBackend(StorageBackend):
         access_key: str,
         secret_key: str,
         bucket_name: str,
-        region: str = "us-east-1"
+        region: str = "us-east-1",
     ):
-        """Initialize S3 storage"""
-        # TODO: Initialize boto3 client when implementing
-        self.access_key = access_key
-        self.secret_key = secret_key
+        import boto3
+
         self.bucket_name = bucket_name
         self.region = region
-        # self.s3_client = boto3.client('s3', ...)
+        self._client = boto3.client(
+            "s3",
+            region_name=region,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+        )
+        logger.info(
+            "S3StorageBackend initialised — bucket=%s region=%s",
+            bucket_name,
+            region,
+        )
+
+    # ── helpers ───────────────────────────────────────────
+
+    def _run(self, fn):
+        """Run a blocking boto3 call in the default thread pool."""
+        loop = asyncio.get_event_loop()
+        return loop.run_in_executor(None, fn)
+
+    # ── interface ─────────────────────────────────────────
 
     async def upload_file(
         self,
         file_bytes: bytes,
         path: str,
-        content_type: str = "application/octet-stream"
+        content_type: str = "application/octet-stream",
     ) -> str:
-        """Upload file to S3"""
-        # TODO: Implement S3 upload
-        # self.s3_client.put_object(
-        #     Bucket=self.bucket_name,
-        #     Key=path,
-        #     Body=file_bytes,
-        #     ContentType=content_type
-        # )
-        raise NotImplementedError("S3 backend coming soon")
+        await self._run(
+            lambda: self._client.put_object(
+                Bucket=self.bucket_name,
+                Key=path,
+                Body=file_bytes,
+                ContentType=content_type,
+            )
+        )
+        logger.debug("S3 upload OK — bucket=%s key=%s", self.bucket_name, path)
+        return path
 
     async def download_file(self, path: str) -> bytes:
-        """Download file from S3"""
-        # TODO: Implement S3 download
-        raise NotImplementedError("S3 backend coming soon")
+        from botocore.exceptions import ClientError
+
+        try:
+            response = await self._run(
+                lambda: self._client.get_object(
+                    Bucket=self.bucket_name, Key=path
+                )
+            )
+            return response["Body"].read()
+        except ClientError as exc:
+            code = exc.response["Error"]["Code"]
+            if code in ("NoSuchKey", "404"):
+                raise FileNotFoundError(f"S3 object not found: {path}") from exc
+            raise
 
     async def delete_file(self, path: str) -> bool:
-        """Delete file from S3"""
-        # TODO: Implement S3 delete
-        raise NotImplementedError("S3 backend coming soon")
+        from botocore.exceptions import ClientError
+
+        try:
+            await self._run(
+                lambda: self._client.delete_object(
+                    Bucket=self.bucket_name, Key=path
+                )
+            )
+            return True
+        except ClientError as exc:
+            logger.warning("S3 delete failed for %s: %s", path, exc)
+            return False
 
     async def file_exists(self, path: str) -> bool:
-        """Check if file exists in S3"""
-        # TODO: Implement S3 check
-        raise NotImplementedError("S3 backend coming soon")
+        from botocore.exceptions import ClientError
+
+        try:
+            await self._run(
+                lambda: self._client.head_object(
+                    Bucket=self.bucket_name, Key=path
+                )
+            )
+            return True
+        except ClientError:
+            return False
 
     async def get_file_size(self, path: str) -> Optional[int]:
-        """Get file size from S3"""
-        # TODO: Implement S3 get size
-        raise NotImplementedError("S3 backend coming soon")
+        from botocore.exceptions import ClientError
+
+        try:
+            response = await self._run(
+                lambda: self._client.head_object(
+                    Bucket=self.bucket_name, Key=path
+                )
+            )
+            return response.get("ContentLength")
+        except ClientError:
+            return None
 
     async def generate_signed_url(
         self,
         path: str,
-        expiration_seconds: int = 3600
+        expiration_seconds: int = 3600,
     ) -> str:
-        """Generate S3 signed URL"""
-        # TODO: Implement S3 signed URL
-        # return self.s3_client.generate_presigned_url(
-        #     'get_object',
-        #     Params={'Bucket': self.bucket_name, 'Key': path},
-        #     ExpiresIn=expiration_seconds
-        # )
-        raise NotImplementedError("S3 backend coming soon")
+        url = await self._run(
+            lambda: self._client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": path},
+                ExpiresIn=expiration_seconds,
+            )
+        )
+        return url
 
+
+# ── Factory & global instance ─────────────────────────────────────────────────
 
 class StorageFactory:
-    """Factory to create storage backend based on configuration"""
-
     @staticmethod
-    def create_backend(
-        backend_type: str = "local",
-        **config
-    ) -> StorageBackend:
-        """
-        Create storage backend.
-        
-        Args:
-            backend_type: 'local' or 's3'
-            **config: Backend-specific configuration
-            
-        Returns:
-            StorageBackend instance
-        """
+    def create_backend(backend_type: str = "local", **config) -> StorageBackend:
         if backend_type == "local":
-            base_path = config.get("base_path", "/var/chat_storage")
-            return LocalStorageBackend(base_path)
-        
+            return LocalStorageBackend(config.get("base_path", "uploads/chat"))
         elif backend_type == "s3":
             return S3StorageBackend(
                 access_key=config["access_key"],
                 secret_key=config["secret_key"],
                 bucket_name=config["bucket_name"],
-                region=config.get("region", "us-east-1")
+                region=config.get("region", "us-east-1"),
             )
-        
-        else:
-            raise ValueError(f"Unknown storage backend: {backend_type}")
+        raise ValueError(f"Unknown storage backend: {backend_type!r}")
 
 
-# Default storage instance (configured at app startup)
 _storage_instance: Optional[StorageBackend] = None
 
 
 def init_storage(backend_type: str = "local", **config) -> StorageBackend:
-    """Initialize global storage instance"""
     global _storage_instance
     _storage_instance = StorageFactory.create_backend(backend_type, **config)
     return _storage_instance
 
 
 def get_storage() -> StorageBackend:
-    """Get global storage instance"""
     if _storage_instance is None:
-        raise RuntimeError("Storage not initialized. Call init_storage() first.")
+        raise RuntimeError("Storage not initialised — call init_storage() first.")
     return _storage_instance

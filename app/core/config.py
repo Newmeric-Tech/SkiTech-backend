@@ -50,12 +50,16 @@ class Settings(BaseSettings):
     SMTP_EMAIL: str = ""
     SMTP_PASSWORD: str = ""
 
-    # AWS S3 (for SOP document and KRA revenue report uploads)
+    # AWS S3 — shared credentials used by all S3 buckets
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     AWS_REGION: str = "us-east-1"
-    S3_SOP_BUCKET: str = "skitech-sop-documents"
-    S3_PROPERTY_IMAGES_BUCKET: str = "skitech-property-images"
+
+    # S3 bucket names (create these in the AWS console)
+    S3_PROPERTY_IMAGES_BUCKET: str = "skitech-property-images"  # public-read
+    S3_SOP_BUCKET: str = "skitech-sop-documents"                # private
+    S3_CHAT_BUCKET: str = "skitech-chat-files"                   # private
+
     BACKEND_URL: str = "http://localhost:8000"
 
     # Logging
