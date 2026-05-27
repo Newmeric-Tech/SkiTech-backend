@@ -560,10 +560,18 @@ async def invite_user(
     if existing:
         raise HTTPException(status_code=400, detail="User with this email already exists")
 
-    role_name = data.get("role", "Staff")
+    _ROLE_MAP = {
+        "Owner": "Tenant Admin", "owner": "Tenant Admin",
+        "Manager": "Manager", "manager": "Manager",
+        "Staff": "Staff", "staff": "Staff",
+        "Superadmin": "Super Admin", "superadmin": "Super Admin",
+        "Tenant Admin": "Tenant Admin", "Super Admin": "Super Admin",
+    }
+    raw_role = data.get("role", "Staff")
+    role_name = _ROLE_MAP.get(raw_role, raw_role)
     role_obj = (await db.execute(select(Role).where(Role.name == role_name))).scalar_one_or_none()
     if not role_obj:
-        raise HTTPException(status_code=400, detail=f"Role '{role_name}' not found")
+        raise HTTPException(status_code=400, detail=f"Role '{raw_role}' not found. Valid: Owner, Manager, Staff")
 
     full_name = data.get("full_name", "")
     parts = full_name.split(" ", 1)

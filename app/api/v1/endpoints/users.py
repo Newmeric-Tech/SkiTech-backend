@@ -31,6 +31,22 @@ from app.utils.otp import send_otp
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
+# Maps frontend-friendly role labels → DB role names
+ROLE_NAME_MAP: dict[str, str] = {
+    # Frontend display names
+    "Owner":       "Tenant Admin",
+    "owner":       "Tenant Admin",
+    "Manager":     "Manager",
+    "manager":     "Manager",
+    "Staff":       "Staff",
+    "staff":       "Staff",
+    "Superadmin":  "Super Admin",
+    "superadmin":  "Super Admin",
+    # DB names (pass-through)
+    "Tenant Admin": "Tenant Admin",
+    "Super Admin":  "Super Admin",
+}
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -258,13 +274,17 @@ async def invite_user(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Resolve role
+    # Resolve role — map frontend labels ("Owner") → DB names ("Tenant Admin")
+    db_role_name = ROLE_NAME_MAP.get(data.role, data.role)
     role_result = await db.execute(
-        select(Role).where(Role.name == data.role)
+        select(Role).where(Role.name == db_role_name)
     )
     role = role_result.scalar_one_or_none()
     if not role:
-        raise HTTPException(status_code=400, detail=f"Role '{data.role}' not found")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Role '{data.role}' not found. Valid roles: Owner, Manager, Staff",
+        )
 
     # Generate temp password
     temp_password = _generate_temp_password()
