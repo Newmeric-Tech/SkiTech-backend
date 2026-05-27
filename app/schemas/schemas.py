@@ -46,6 +46,11 @@ class LoginRequest(BaseModel):
     password: str
     expected_role: Optional[str] = None
 
+
+class GoogleAuthRequest(BaseModel):
+    credential: str          # Google ID token
+    expected_role: Optional[str] = None
+
 class OTPVerifyRequest(BaseModel):
     email: EmailStr
     otp: str

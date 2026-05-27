@@ -62,6 +62,10 @@ class Settings(BaseSettings):
 
     BACKEND_URL: str = "http://localhost:8000"
 
+    # Google OAuth
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+
     # Logging
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: Optional[str] = None

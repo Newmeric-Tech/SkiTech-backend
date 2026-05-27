@@ -4,6 +4,7 @@ Auth Routes - app/api/v1/endpoints/auth.py
 POST /auth/register
 POST /auth/verify-otp
 POST /auth/login
+POST /auth/google
 POST /auth/refresh
 POST /auth/forgot-password
 POST /auth/reset-password
@@ -12,11 +13,13 @@ POST /auth/logout
 
 from datetime import datetime
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import (
     create_access_token, create_refresh_token, decode_token,
@@ -24,7 +27,7 @@ from app.core.security import (
 )
 from app.models.models import DemoRequest, User, Role
 from app.schemas.schemas import (
-    LoginRequest, OTPVerifyRequest, PasswordResetConfirm,
+    GoogleAuthRequest, LoginRequest, OTPVerifyRequest, PasswordResetConfirm,
     PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse, SuperAdminLoginRequest
 )
 from app.utils.otp import send_otp, verify_otp
@@ -208,6 +211,108 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
             status_code=500,
             detail=f"Login error: {type(e).__name__}: {str(e)}"
         )
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_login(data: GoogleAuthRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Authenticate using a Google ID token (OAuth 2.0).
+    The user must already exist in the system — Google OAuth is a login method only.
+    """
+    import logging as _logging
+    _log = _logging.getLogger("skitech")
+
+    # ── 1. Verify the Google ID token with Google's tokeninfo endpoint ──────────
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": data.credential},
+            )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid Google token")
+
+        token_info = resp.json()
+
+        # Validate audience matches our Client ID
+        if settings.GOOGLE_CLIENT_ID and token_info.get("aud") != settings.GOOGLE_CLIENT_ID:
+            raise HTTPException(status_code=401, detail="Google token audience mismatch")
+
+        google_email: str = token_info.get("email", "").lower().strip()
+        google_first_name: str = token_info.get("given_name", "")
+        google_last_name: str = token_info.get("family_name", "")
+
+        if not google_email:
+            raise HTTPException(status_code=400, detail="Could not extract email from Google token")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log.error(f"[GOOGLE LOGIN] Token verification error: {e}", exc_info=True)
+        raise HTTPException(status_code=401, detail="Google token verification failed")
+
+    # ── 2. Find user by email ───────────────────────────────────────────────────
+    result = await db.execute(
+        select(User).where(
+            User.email == google_email,
+            User.is_active == True,
+            User.deleted_at.is_(None),
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="No account found for this Google email. Please contact your administrator to create your account.",
+        )
+
+    if not user.is_verified:
+        # Auto-verify for Google OAuth users (Google already verified the email)
+        user.is_verified = True
+
+    # Update name from Google profile if not already set
+    if not user.first_name and google_first_name:
+        user.first_name = google_first_name
+    if not user.last_name and google_last_name:
+        user.last_name = google_last_name
+
+    # ── 3. Load role ────────────────────────────────────────────────────────────
+    role_result = await db.execute(select(Role).where(Role.id == user.role_id))
+    role = role_result.scalar_one_or_none()
+    actual_role = role.name if role else "Staff"
+
+    # ── 4. Validate expected role if provided ───────────────────────────────────
+    if data.expected_role:
+        expected_db_role = ROLE_NAME_MAP.get(data.expected_role)
+        if not expected_db_role:
+            raise HTTPException(status_code=400, detail=f"Unknown role: '{data.expected_role}'")
+        if actual_role != expected_db_role:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied. Your Google account is not registered as '{expected_db_role}'.",
+            )
+
+    # ── 5. Update last login & commit ───────────────────────────────────────────
+    user.last_login = datetime.utcnow()
+    await db.commit()
+
+    # ── 6. Return JWT tokens ────────────────────────────────────────────────────
+    payload = {
+        "sub": str(user.id),
+        "user_id": str(user.id),
+        "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+        "property_id": str(user.property_id) if user.property_id else None,
+        "email": user.email,
+        "role": actual_role,
+        "first_name": user.first_name or google_first_name,
+        "last_name": user.last_name or google_last_name,
+    }
+
+    return TokenResponse(
+        access_token=create_access_token(payload),
+        refresh_token=create_refresh_token(payload),
+    )
 
 
 @router.post("/superadmin-login", response_model=TokenResponse)
