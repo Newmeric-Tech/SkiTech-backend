@@ -7,10 +7,14 @@ Queries across all tenants without tenant_id scoping.
 
 import csv
 import io
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, List, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import func, select, and_, or_, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -661,16 +665,29 @@ async def delete_user(
     if user_id == user.get("user_id"):
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
 
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id format")
+
     target = (await db.execute(
-        select(User).where(User.id == user_id, User.deleted_at == None)
+        select(User).where(User.id == uid, User.deleted_at == None)
     )).scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
-    target.deleted_at = datetime.now(timezone.utc)
-    target.is_active = False
-    await db.commit()
-    return {"success": True, "message": "User deleted"}
+    try:
+        target.deleted_at = datetime.utcnow()   # naive UTC — matches DateTime column
+        target.is_active = False
+        await db.commit()
+        return {"success": True, "message": "User deleted"}
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"[DELETE USER] {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete user: {type(e).__name__}: {str(e)[:300]}",
+        )
 
 
 @router.put("/users/{user_id}/role")
