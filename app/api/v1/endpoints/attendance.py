@@ -20,9 +20,7 @@ from app.services.attendance_service import AttendanceService, GeofenceService
 router = APIRouter(prefix="/attendance", tags=["Attendance & Geolocation"])
 
 
-# ===========================
 # Punch In/Out Endpoints
-# ===========================
 
 @router.post("/punch-in", response_model=PunchInResponse, status_code=status.HTTP_201_CREATED)
 async def punch_in(
@@ -144,10 +142,7 @@ async def update_current_status(
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error updating status")
 
-
-# ===========================
 # Attendance History
-# ===========================
 
 @router.get("/history")
 async def get_attendance_history(
@@ -203,9 +198,7 @@ async def get_daily_summary(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error calculating daily summary")
 
 
-# ===========================
 # Geofence Management
-# ===========================
 
 @router.post("/geofence", response_model=PropertyGeofenceResponse, status_code=status.HTTP_201_CREATED)
 async def create_geofence(
@@ -346,7 +339,6 @@ async def get_property_attendance_today(
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error fetching property attendance")
 
-
 @router.get("/property/{property_id}/week")
 async def get_property_attendance_week(
     property_id: str,
@@ -392,7 +384,6 @@ async def get_property_attendance_week(
         }
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error fetching weekly attendance")
-
 
 @router.get("/geofence")
 async def list_geofences(

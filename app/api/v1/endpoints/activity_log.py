@@ -46,7 +46,6 @@ def _fmt_log(log: AuditLog) -> dict:
 
 
 # ─── GET /activity-log/summary ────────────────────────────────
-
 @router.get("/summary")
 async def get_activity_summary(
     days: int = Query(7, ge=1, le=90, description="Number of days to summarise"),
@@ -70,16 +69,15 @@ async def get_activity_summary(
 
 
 # ─── GET /activity-log/ ───────────────────────────────────────
-
 @router.get("/")
 async def list_activity_logs(
-    skip:          int            = Query(0,   ge=0),
-    limit:         int            = Query(50,  ge=1, le=200),
-    severity:      Optional[str]  = Query(None, description="Filter by raw severity: low|medium|high|critical"),
-    action_type:   Optional[str]  = Query(None, description="Filter by action, e.g. CREATE, UPDATE"),
-    resource_type: Optional[str]  = Query(None, description="Filter by resource type"),
-    start_date:    Optional[datetime] = Query(None),
-    end_date:      Optional[datetime] = Query(None),
+    skip: int = Query(0,   ge=0),
+    limit: int = Query(50,  ge=1, le=200),
+    severity: Optional[str] = Query(None, description="Filter by raw severity: low|medium|high|critical"),
+    action_type: Optional[str] = Query(None, description="Filter by action, e.g. CREATE, UPDATE"),
+    resource_type: Optional[str] = Query(None, description="Filter by resource type"),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_obj),
 ):
@@ -103,7 +101,6 @@ async def list_activity_logs(
 
 
 # ─── GET /activity-log/critical ───────────────────────────────
-
 @router.get("/critical")
 async def get_critical_events(
     limit: int = Query(10, ge=1, le=50),
