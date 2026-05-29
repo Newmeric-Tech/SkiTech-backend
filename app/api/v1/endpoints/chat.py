@@ -27,7 +27,7 @@ import logging
 
 from fastapi import (
     APIRouter, Depends, HTTPException, status, UploadFile, File,
-    Header, Query, WebSocket, WebSocketDisconnect, Body
+    Header, Query, WebSocket, WebSocketDisconnect, Body, Form
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -556,6 +556,103 @@ async def send_message(
         logger.warning("WS broadcast failed (non-fatal): %s", e)
 
     return message
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages/with-media",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Send message with file attachment (atomic)"
+)
+async def send_message_with_media(
+    conversation_id: UUID,
+    tenant_id: UUID = Query(...),
+    property_id: UUID = Query(...),
+    file: UploadFile = File(...),
+    content: str = Form(""),
+    authorization: str = Header(...),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Create a message and attach a file in a single atomic request.
+    The WS broadcast fires only after the media is stored, so recipients
+    always see the file bubble — never a plain-text filename.
+    """
+    try:
+        security = await get_chat_security_context(authorization, tenant_id, property_id, session)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
+    # Use filename as message content when no caption is provided
+    effective_content = content.strip() or (file.filename or "attachment")
+
+    msg_service = MessageService(session)
+    try:
+        message = await msg_service.send_message(
+            conversation_id=conversation_id,
+            sender_id=security.user_id,
+            content=effective_content,
+            tenant_id=security.tenant_id,
+        )
+    except AccessDenied as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except Exception as e:
+        logger.exception("send_message_with_media: message creation failed: %s", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Read and upload the file
+    try:
+        file_bytes = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to read file: {e}")
+
+    media_type = "file"
+    ct = file.content_type or ""
+    if ct.startswith("image/"):
+        media_type = "image"
+    elif ct.startswith("audio/"):
+        media_type = "audio"
+    elif ct.startswith("video/"):
+        media_type = "video"
+
+    media_service = MediaService(session)
+    try:
+        await media_service.upload_media(
+            conversation_id=conversation_id,
+            message_id=message.id,
+            file_bytes=file_bytes,
+            original_filename=file.filename or effective_content,
+            media_type=media_type,
+            mime_type=ct or "application/octet-stream",
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(e))
+    except Exception as e:
+        logger.exception("send_message_with_media: upload failed: %s", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Re-fetch the message so media is included in the response
+    from app.repositories.chat_repository import MessageRepository
+    msg_repo = MessageRepository(session)
+    fresh = await msg_repo.get_by_id(message_id=message.id, conversation_id=conversation_id)
+    if fresh is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Message not found after upload")
+    full_response = await msg_service._message_to_response(fresh, security.user_id)
+
+    # Broadcast with media attached — recipients see the file bubble, not plain text
+    try:
+        manager = get_websocket_manager()
+        await publish_message_sent_event(
+            manager=manager,
+            conversation_id=conversation_id,
+            tenant_id=security.tenant_id,
+            property_id=security.property_id,
+            message_data=json.loads(full_response.model_dump_json())
+        )
+    except Exception as e:
+        logger.warning("WS broadcast failed (non-fatal): %s", e)
+
+    return full_response
 
 
 @router.get(
