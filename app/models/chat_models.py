@@ -276,10 +276,8 @@ class MessageMedia(Base, UUIDMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True
     )
     
-    # Media type
-    media_type: str = Column(
-        SQLEnum(MediaType, native_enum=False), nullable=False
-    )
+    # Media type — stored as VARCHAR(20); CHECK constraint enforces valid values
+    media_type: str = Column(String(20), nullable=False)
     
     # Storage paths (abstracted for local/S3 migration)
     storage_key: str = Column(String(512), nullable=False)  # relative path or S3 key
