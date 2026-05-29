@@ -615,7 +615,12 @@ async def send_message_with_media(
     elif ct.startswith("video/"):
         media_type = "video"
 
-    media_service = MediaService(session)
+    try:
+        media_service = MediaService(session)
+    except RuntimeError as e:
+        logger.error("send_message_with_media: storage not initialised: %s", e)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="File storage not available")
+
     try:
         media_response = await media_service.upload_media(
             conversation_id=conversation_id,
@@ -633,7 +638,11 @@ async def send_message_with_media(
 
     # Build the full response by injecting the media into the message — avoids
     # a DB re-fetch that could return a stale (empty media) result from the session cache.
-    full_response = message.model_copy(update={"media": [media_response]})
+    try:
+        full_response = message.model_copy(update={"media": [media_response]})
+    except Exception as e:
+        logger.exception("send_message_with_media: model_copy failed: %s", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Broadcast with media attached — recipients see the file bubble, not plain text
     try:
