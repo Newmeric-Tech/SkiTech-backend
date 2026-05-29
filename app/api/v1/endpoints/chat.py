@@ -617,7 +617,7 @@ async def send_message_with_media(
 
     media_service = MediaService(session)
     try:
-        await media_service.upload_media(
+        media_response = await media_service.upload_media(
             conversation_id=conversation_id,
             message_id=message.id,
             file_bytes=file_bytes,
@@ -631,13 +631,9 @@ async def send_message_with_media(
         logger.exception("send_message_with_media: upload failed: %s", e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    # Re-fetch the message so media is included in the response
-    from app.repositories.chat_repository import MessageRepository
-    msg_repo = MessageRepository(session)
-    fresh = await msg_repo.get_by_id(message_id=message.id, conversation_id=conversation_id)
-    if fresh is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Message not found after upload")
-    full_response = await msg_service._message_to_response(fresh, security.user_id)
+    # Build the full response by injecting the media into the message — avoids
+    # a DB re-fetch that could return a stale (empty media) result from the session cache.
+    full_response = message.model_copy(update={"media": [media_response]})
 
     # Broadcast with media attached — recipients see the file bubble, not plain text
     try:
