@@ -276,8 +276,10 @@ class MessageMedia(Base, UUIDMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True
     )
     
-    # Media type — stored as VARCHAR(20); CHECK constraint enforces valid values
-    media_type: str = Column(String(20), nullable=False)
+    # Media type — stored as Text so asyncpg sends OID 25 (text), enabling
+    # the implicit text→ENUM cast PostgreSQL auto-creates for every ENUM type.
+    # String(20) sends OID 1043 (varchar) which has no implicit cast to ENUM.
+    media_type: str = Column(Text, nullable=False)
     
     # Storage paths (abstracted for local/S3 migration)
     storage_key: str = Column(String(512), nullable=False)  # relative path or S3 key
