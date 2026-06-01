@@ -17,6 +17,10 @@ from app.models.chat_models import (
     Conversation, ConversationParticipant, Message, MessageMedia,
     MessageDeliveryStatus, TypingIndicator, ChatNotification,
 )
+from app.models.ranking_models import (
+    RankingCriteriaConfig, EmployeeRankingScore, EmployeeRanking,
+    RankingAuditLog, RankingInsight,
+)
 
 __all__ = [
     "Base",
@@ -30,4 +34,6 @@ __all__ = [
     "AuditLog",
     "Conversation", "ConversationParticipant", "Message", "MessageMedia",
     "MessageDeliveryStatus", "TypingIndicator", "ChatNotification",
+    "RankingCriteriaConfig", "EmployeeRankingScore", "EmployeeRanking",
+    "RankingAuditLog", "RankingInsight",
 ]

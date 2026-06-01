@@ -9,7 +9,7 @@ from app.api.v1.endpoints import (
     auth, governance, inventory,
     properties, sop, workforce, users, stats, reports, rooms,
     kra, attendance, department, employee, vendor, owner, superadmin, dashboard,
-    subscriptions, chat, scheduling, complaints, documents, activity_log,
+    subscriptions, chat, scheduling, complaints, documents, activity_log, ranking,
 )
 from app.api.v1 import vendor_owner_department_routes
 
@@ -60,6 +60,9 @@ router.include_router(documents.router)
 
 # Master Activity Log
 router.include_router(activity_log.router)
+
+# Employee Ranking System
+router.include_router(ranking.router)
 
 # Superadmin
 router.include_router(superadmin.router)
