@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db as get_async_session
 from app.api.dependencies import get_current_user_obj as get_current_user
-from app.models.models import User
+from app.models.models import User, Employee
 from app.repositories.ranking_repository import (
     RankingCriteriaRepository, EmployeeScoresRepository, EmployeeRankingRepository
 )
@@ -29,6 +29,48 @@ from app.utils.exceptions import AccessDenied, NotFound, ValidationError
 
 
 router = APIRouter(prefix="/rankings", tags=["rankings"])
+
+
+# ===========================================================
+# CURRENT STAFF MEMBER — OWN RANKING
+# ===========================================================
+
+@router.get(
+    "/me",
+    response_model=EmployeeRankingResponse,
+    summary="Get current staff member's own ranking"
+)
+async def get_my_ranking(
+    ranking_type: str = Query("weekly"),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Returns the ranking for the currently authenticated staff member.
+    Looks up the Employee record linked to this user, then fetches their ranking.
+    """
+    try:
+        from sqlalchemy import select
+        result = await session.execute(
+            select(Employee).where(Employee.user_id == current_user.id)
+        )
+        employee = result.scalar_one_or_none()
+        if not employee:
+            raise NotFound("No employee record linked to your account")
+
+        service = RankingService(session)
+        ranking = await service.get_employee_ranking_detail(
+            employee_id=employee.id,
+            ranking_type=ranking_type
+        )
+        if not ranking:
+            raise NotFound("No ranking found for the current period")
+
+        return ranking
+    except NotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # ===========================================================
