@@ -108,6 +108,7 @@ def _send_via_smtp(to: str, subject: str, html: str) -> bool:
 
 def send_invitation(email: str, temp_password: str) -> bool:
     """Send OTP + temporary password to a newly invited user."""
+    logger.info(f"[Invite] Background task started for {email}")
     otp = generate_otp()
     save_otp(email, otp)
 
