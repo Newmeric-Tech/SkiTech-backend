@@ -628,6 +628,9 @@ async def invite_user(
         "property": data.get("property_id", ""),
         "last_active": "",
         "status": "pending",
+        "is_verified": False,
+        "invited_at": new_user.created_at.isoformat() if new_user.created_at else "",
+        "temp_password": temp_password,
     }
 
 
