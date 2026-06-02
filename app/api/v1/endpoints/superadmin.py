@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 
 logger = logging.getLogger(__name__)
 from sqlalchemy import func, select, and_, or_, update, delete
@@ -551,6 +551,7 @@ async def list_users(
 @router.post("/users/invite", status_code=status.HTTP_201_CREATED)
 async def invite_user(
     data: dict,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
@@ -611,7 +612,7 @@ async def invite_user(
     await db.refresh(new_user)
 
     from app.utils.otp import send_invitation
-    send_invitation(email, temp_password)
+    background_tasks.add_task(send_invitation, email, temp_password)
 
     return {
         "id": str(new_user.id),
