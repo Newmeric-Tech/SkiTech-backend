@@ -45,11 +45,8 @@ class Settings(BaseSettings):
     ALLOWED_HEADERS: List[str] = ["*"]
 
     # Email / OTP
-    #RESEND_API_KEY: str = ""
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
+    SENDGRID_API_KEY: str = ""
     SMTP_EMAIL: str = ""
-    SMTP_PASSWORD: str = ""
 
     # AWS S3 — shared credentials used by all S3 buckets
     AWS_ACCESS_KEY_ID: Optional[str] = None

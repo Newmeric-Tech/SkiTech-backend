@@ -4,10 +4,7 @@ OTP Service - app/utils/otp.py
 
 import logging
 import random
-import smtplib
 import time
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 from app.core.config import settings
 
@@ -47,33 +44,27 @@ def verify_otp(email: str, otp: str) -> bool:
     return False
 
 
-def _send_via_smtp(to: str, subject: str, html: str) -> bool:
-    smtp_email = settings.SMTP_EMAIL
-    smtp_password = settings.SMTP_PASSWORD
-
-    if not smtp_email or not smtp_password:
-        logger.warning(f"[SMTP] No credentials set — email to {to} skipped")
+def _send_email(to: str, subject: str, html: str) -> bool:
+    if not settings.SENDGRID_API_KEY:
+        logger.warning(f"[Email] No SENDGRID_API_KEY set — skipping email to {to}")
         return False
 
-    logger.info(f"[SMTP] Sending '{subject}' to {to} via {smtp_email}")
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = smtp_email
-        msg["To"] = to
-        msg.attach(MIMEText(html, "html"))
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
-            server.login(smtp_email, smtp_password)
-            server.sendmail(smtp_email, to, msg.as_string())
-
-        logger.info(f"[SMTP] ✅ Email sent successfully to {to}")
+        message = Mail(
+            from_email=(settings.SMTP_EMAIL or "skitech.noreply@gmail.com", "SkiTech"),
+            to_emails=to,
+            subject=subject,
+            html_content=html,
+        )
+        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
+        response = sg.send(message)
+        logger.info(f"[SendGrid] ✅ Email sent to {to} — status: {response.status_code}")
         return True
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"[SMTP] ❌ Auth failed for {smtp_email}: {e}")
-        return False
     except Exception as e:
-        logger.error(f"[SMTP] ❌ Error sending to {to}: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"[SendGrid] ❌ Failed to send to {to}: {type(e).__name__}: {e}", exc_info=True)
         return False
 
 
@@ -82,10 +73,6 @@ def send_invitation(email: str, temp_password: str) -> bool:
 
     otp = generate_otp()
     save_otp(email, otp)
-
-    if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
-        logger.warning(f"[Invite] No SMTP credentials — OTP: {otp} | Pass: {temp_password}")
-        return True
 
     frontend_url = settings.FRONTEND_URL
     verify_url = f"{frontend_url}/auth/verify-invite?email={email}"
@@ -113,16 +100,12 @@ def send_invitation(email: str, temp_password: str) -> bool:
     </div>
     """
 
-    return _send_via_smtp(email, "You've been invited to SkiTech", html)
+    return _send_email(email, "You've been invited to SkiTech", html)
 
 
 def send_otp(email: str, purpose: str = "verification") -> bool:
     otp = generate_otp()
     save_otp(email, otp)
-
-    if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
-        logger.info(f"[DEV OTP] {email} → {otp}")
-        return True
 
     if purpose == "password_reset":
         subject = "SkiTech – Password Reset OTP"
@@ -143,4 +126,4 @@ def send_otp(email: str, purpose: str = "verification") -> bool:
           <p style="color:#888;font-size:13px">Valid for 5 minutes.</p>
         </div>"""
 
-    return _send_via_smtp(email, subject, html)
+    return _send_email(email, subject, html)
