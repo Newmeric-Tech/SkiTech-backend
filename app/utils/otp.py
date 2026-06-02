@@ -56,6 +56,7 @@ def _send_via_resend(to: str, subject: str, html: str) -> bool:
         import resend
         resend.api_key = settings.RESEND_API_KEY
 
+        logger.info(f"[Resend] Attempting to send '{subject}' to {to}")
         params = {
             "from": "SkiTech <onboarding@resend.dev>",
             "to": [to],
@@ -63,10 +64,11 @@ def _send_via_resend(to: str, subject: str, html: str) -> bool:
             "html": html,
         }
         response = resend.Emails.send(params)
-        logger.info(f"[Resend] Email sent to {to} — id: {response.get('id')}")
+        email_id = response.get("id") if isinstance(response, dict) else getattr(response, "id", response)
+        logger.info(f"[Resend] SUCCESS — email id: {email_id} → {to}")
         return True
     except Exception as e:
-        logger.error(f"[Resend] Failed to send to {to}: {e}", exc_info=True)
+        logger.error(f"[Resend] FAILED to send to {to} — {type(e).__name__}: {e}", exc_info=True)
         return False
 
 
