@@ -81,7 +81,7 @@ def _send_via_smtp(to: str, subject: str, html: str) -> bool:
         logger.warning(f"[Email] No credentials configured — cannot send to {to}")
         return False
 
-    logger.info(f"[SMTP] Connecting to {settings.SMTP_HOST}:{settings.SMTP_PORT}")
+    logger.info(f"[SMTP] Connecting to smtp.gmail.com:465 (SSL) as {settings.SMTP_EMAIL}")
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
@@ -89,20 +89,17 @@ def _send_via_smtp(to: str, subject: str, html: str) -> bool:
         msg["To"] = to
         msg.attach(MIMEText(html, "html"))
 
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
             server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
             server.sendmail(settings.SMTP_EMAIL, to, msg.as_string())
 
-        logger.info(f"[SMTP] Email sent to {to}")
+        logger.info(f"[SMTP] ✅ Email sent to {to}")
         return True
     except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"[SMTP] Auth failed for {settings.SMTP_EMAIL}: {e}")
+        logger.error(f"[SMTP] ❌ Auth failed for {settings.SMTP_EMAIL}: {e}")
         return False
     except Exception as e:
-        logger.error(f"[SMTP] Error sending to {to}: {e}", exc_info=True)
+        logger.error(f"[SMTP] ❌ Failed to send to {to}: {type(e).__name__}: {e}", exc_info=True)
         return False
 
 
