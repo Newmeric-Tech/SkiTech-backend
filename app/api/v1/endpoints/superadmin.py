@@ -506,7 +506,7 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
-    filters = [User.deleted_at == None]
+    filters = [User.deleted_at == None, User.is_verified == True]
     if search:
         filters.append(
             or_(
