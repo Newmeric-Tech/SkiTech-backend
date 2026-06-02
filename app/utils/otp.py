@@ -4,6 +4,7 @@ OTP Service - app/utils/otp.py
 In-memory OTP store (replace with Redis in production).
 """
 
+import logging
 import random
 import smtplib
 import time
@@ -11,6 +12,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from app.core.config import settings
+
+logger = logging.getLogger("skitech")
 
 # In-memory store: { email: { "otp": "123456", "expires_at": float } }
 _otp_store: dict = {}
@@ -47,6 +50,40 @@ def verify_otp(email: str, otp: str) -> bool:
     return False
 
 
+def _send_email(to: str, subject: str, body: str) -> bool:
+    """Shared SMTP sender. Returns True on success, logs error on failure."""
+    if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
+        logger.warning(f"[SMTP] No credentials — skipping email to {to}")
+        return False
+
+    logger.info(f"[SMTP] Connecting to {settings.SMTP_HOST}:{settings.SMTP_PORT} as {settings.SMTP_EMAIL}")
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = settings.SMTP_EMAIL
+        msg["To"] = to
+        msg.attach(MIMEText(body, "html"))
+
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_EMAIL, to, msg.as_string())
+
+        logger.info(f"[SMTP] Email sent to {to} — subject: {subject}")
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"[SMTP] Authentication failed for {settings.SMTP_EMAIL}: {e}")
+        return False
+    except smtplib.SMTPException as e:
+        logger.error(f"[SMTP] SMTP error sending to {to}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"[SMTP] Unexpected error sending to {to}: {e}", exc_info=True)
+        return False
+
+
 def send_invitation(email: str, temp_password: str) -> bool:
     """Send OTP + temporary password to a newly invited user."""
     otp = generate_otp()
@@ -56,7 +93,7 @@ def send_invitation(email: str, temp_password: str) -> bool:
     verify_url = f"{frontend_url}/auth/verify-invite?email={email}"
 
     if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
-        print(f"[DEV INVITE] {email} → OTP: {otp} | Temp Password: {temp_password}")
+        logger.info(f"[DEV INVITE] {email} → OTP: {otp} | Temp Password: {temp_password}")
         return True
 
     subject = "SkiTech – You've Been Invited"
@@ -85,22 +122,7 @@ def send_invitation(email: str, temp_password: str) -> bool:
         <p style="color:#bbb;font-size:12px">If you did not expect this invitation, please ignore this email.</p>
     </body></html>"""
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = settings.SMTP_EMAIL
-        msg["To"] = email
-        msg.attach(MIMEText(body, "html"))
-
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.starttls()
-            server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_EMAIL, email, msg.as_string())
-
-        return True
-    except Exception as e:
-        print(f"[INVITE ERROR] {e}")
-        return False
+    return _send_email(email, subject, body)
 
 
 def send_otp(email: str, purpose: str = "verification") -> bool:
@@ -108,40 +130,24 @@ def send_otp(email: str, purpose: str = "verification") -> bool:
     save_otp(email, otp)
 
     if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
-        # Dev mode: just print the OTP
-        print(f"[DEV OTP] {email} → {otp}")
+        logger.info(f"[DEV OTP] {email} → {otp}")
         return True
 
     if purpose == "password_reset":
         subject = "SkiTech – Password Reset OTP"
-        body = f"""<html><body>
-            <h2>Password Reset</h2>
+        body = f"""<html><body style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+            <h2 style="color:#111">Password Reset</h2>
             <p>Use this OTP to reset your password:</p>
-            <h1 style="letter-spacing:8px">{otp}</h1>
-            <p>Valid for 5 minutes.</p>
+            <h1 style="letter-spacing:10px;color:#111;font-size:32px">{otp}</h1>
+            <p style="color:#888;font-size:13px">Valid for 5 minutes. If you did not request this, ignore this email.</p>
         </body></html>"""
     else:
         subject = "SkiTech – Email Verification OTP"
-        body = f"""<html><body>
-            <h2>Welcome to SkiTech!</h2>
+        body = f"""<html><body style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+            <h2 style="color:#111">Welcome to SkiTech!</h2>
             <p>Verify your email with this OTP:</p>
-            <h1 style="letter-spacing:8px">{otp}</h1>
-            <p>Valid for 5 minutes.</p>
+            <h1 style="letter-spacing:10px;color:#111;font-size:32px">{otp}</h1>
+            <p style="color:#888;font-size:13px">Valid for 5 minutes.</p>
         </body></html>"""
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = settings.SMTP_EMAIL
-        msg["To"] = email
-        msg.attach(MIMEText(body, "html"))
-
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.starttls()
-            server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_EMAIL, email, msg.as_string())
-
-        return True
-    except Exception as e:
-        print(f"[OTP ERROR] {e}")
-        return False
+    return _send_email(email, subject, body)
