@@ -74,8 +74,9 @@ def send_invitation(email: str, temp_password: str) -> bool:
     otp = generate_otp()
     save_otp(email, otp)
 
+    from urllib.parse import quote
     frontend_url = settings.FRONTEND_URL
-    verify_url = f"{frontend_url}/auth/verify-invite?email={email}"
+    verify_url = f"{frontend_url}/auth/verify-invite?email={quote(email)}"
 
     html = f"""
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;background:#fff">
