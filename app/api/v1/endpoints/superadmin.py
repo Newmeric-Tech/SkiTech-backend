@@ -559,9 +559,11 @@ async def invite_user(
         raise HTTPException(status_code=400, detail="Email is required")
 
     existing = (await db.execute(
-        select(User).where(User.email == email, User.deleted_at == None)
+        select(User).where(User.email == email)
     )).scalar_one_or_none()
     if existing:
+        if existing.deleted_at is not None:
+            raise HTTPException(status_code=400, detail="This email was previously used and deleted. Please use a different email.")
         raise HTTPException(status_code=400, detail="User with this email already exists")
 
     _ROLE_MAP = {
