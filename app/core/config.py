@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     ALLOWED_HEADERS: List[str] = ["*"]
 
     # Email / OTP
-    RESEND_API_KEY: str = ""
+    #RESEND_API_KEY: str = ""
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
     SMTP_EMAIL: str = ""
