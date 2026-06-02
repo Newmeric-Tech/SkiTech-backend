@@ -506,7 +506,15 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
-    filters = [User.deleted_at == None, User.is_verified == True]
+    if status == "pending":
+        filters = [User.deleted_at == None, User.is_verified == False]
+    else:
+        filters = [User.deleted_at == None, User.is_verified == True]
+        if status == "suspended":
+            filters.append(User.is_active == False)
+        elif status == "active":
+            filters.append(User.is_active == True)
+
     if search:
         filters.append(
             or_(
@@ -515,10 +523,6 @@ async def list_users(
                 User.last_name.ilike(f"%{search}%"),
             )
         )
-    if status == "suspended":
-        filters.append(User.is_active == False)
-    elif status == "active":
-        filters.append(User.is_active == True)
 
     users = (await db.execute(
         select(User).where(and_(*filters)).offset(skip).limit(limit)
@@ -542,7 +546,9 @@ async def list_users(
             "role": role_name,
             "property": str(u.property_id) if u.property_id else "",
             "last_active": u.last_login.isoformat() if u.last_login else "",
-            "status": "active" if u.is_active else "suspended",
+            "status": "pending" if not u.is_verified else ("active" if u.is_active else "suspended"),
+            "is_verified": u.is_verified,
+            "invited_at": u.created_at.isoformat() if hasattr(u, "created_at") and u.created_at else "",
         })
 
     return result
