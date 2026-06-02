@@ -8,6 +8,7 @@ python-multipart==0.0.6
 
 # Performance
 httptools==0.6.1
+resend
 
 # Database - async SQLAlchemy + PostgreSQL
 sqlalchemy==2.0.29
