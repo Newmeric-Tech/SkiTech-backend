@@ -1,21 +1,15 @@
 """
 OTP Service - app/utils/otp.py
-
-In-memory OTP store (replace with Redis in production).
 """
 
 import logging
 import random
-import smtplib
 import time
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 from app.core.config import settings
 
 logger = logging.getLogger("skitech")
 
-# In-memory store: { email: { "otp": "123456", "expires_at": float } }
 _otp_store: dict = {}
 OTP_EXPIRY_SECONDS = 300  # 5 minutes
 
@@ -50,19 +44,48 @@ def verify_otp(email: str, otp: str) -> bool:
     return False
 
 
-def _send_email(to: str, subject: str, body: str) -> bool:
-    """Shared SMTP sender. Returns True on success, logs error on failure."""
-    if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
-        logger.warning(f"[SMTP] No credentials — skipping email to {to}")
+def _send_email(to: str, subject: str, html: str) -> bool:
+    """Send email via Resend. Falls back to SMTP if no Resend key."""
+    if settings.RESEND_API_KEY:
+        return _send_via_resend(to, subject, html)
+    return _send_via_smtp(to, subject, html)
+
+
+def _send_via_resend(to: str, subject: str, html: str) -> bool:
+    try:
+        import resend
+        resend.api_key = settings.RESEND_API_KEY
+
+        params = {
+            "from": "SkiTech <onboarding@resend.dev>",
+            "to": [to],
+            "subject": subject,
+            "html": html,
+        }
+        response = resend.Emails.send(params)
+        logger.info(f"[Resend] Email sent to {to} — id: {response.get('id')}")
+        return True
+    except Exception as e:
+        logger.error(f"[Resend] Failed to send to {to}: {e}", exc_info=True)
         return False
 
-    logger.info(f"[SMTP] Connecting to {settings.SMTP_HOST}:{settings.SMTP_PORT} as {settings.SMTP_EMAIL}")
+
+def _send_via_smtp(to: str, subject: str, html: str) -> bool:
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
+        logger.warning(f"[Email] No credentials configured — cannot send to {to}")
+        return False
+
+    logger.info(f"[SMTP] Connecting to {settings.SMTP_HOST}:{settings.SMTP_PORT}")
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = settings.SMTP_EMAIL
         msg["To"] = to
-        msg.attach(MIMEText(body, "html"))
+        msg.attach(MIMEText(html, "html"))
 
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
             server.ehlo()
@@ -71,16 +94,13 @@ def _send_email(to: str, subject: str, body: str) -> bool:
             server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
             server.sendmail(settings.SMTP_EMAIL, to, msg.as_string())
 
-        logger.info(f"[SMTP] Email sent to {to} — subject: {subject}")
+        logger.info(f"[SMTP] Email sent to {to}")
         return True
     except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"[SMTP] Authentication failed for {settings.SMTP_EMAIL}: {e}")
-        return False
-    except smtplib.SMTPException as e:
-        logger.error(f"[SMTP] SMTP error sending to {to}: {e}")
+        logger.error(f"[SMTP] Auth failed for {settings.SMTP_EMAIL}: {e}")
         return False
     except Exception as e:
-        logger.error(f"[SMTP] Unexpected error sending to {to}: {e}", exc_info=True)
+        logger.error(f"[SMTP] Error sending to {to}: {e}", exc_info=True)
         return False
 
 
@@ -89,65 +109,70 @@ def send_invitation(email: str, temp_password: str) -> bool:
     otp = generate_otp()
     save_otp(email, otp)
 
-    frontend_url = settings.FRONTEND_URL
-    verify_url = f"{frontend_url}/auth/verify-invite?email={email}"
-
-    if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
+    if not settings.RESEND_API_KEY and not settings.SMTP_EMAIL:
         logger.info(f"[DEV INVITE] {email} → OTP: {otp} | Temp Password: {temp_password}")
         return True
 
-    subject = "SkiTech – You've Been Invited"
-    body = f"""<html><body style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
-        <h2 style="color:#111">Welcome to SkiTech!</h2>
-        <p>You have been invited to join the SkiTech platform. Use the details below to verify your account and get started.</p>
+    frontend_url = settings.FRONTEND_URL
+    verify_url = f"{frontend_url}/auth/verify-invite?email={email}"
 
-        <div style="background:#f5f4f0;border-radius:12px;padding:20px;margin:20px 0">
-            <p style="margin:0 0 8px;color:#555;font-size:14px">Your temporary password:</p>
-            <code style="font-size:18px;font-weight:bold;color:#111;letter-spacing:2px">{temp_password}</code>
-        </div>
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;background:#fff">
+      <div style="text-align:center;margin-bottom:24px">
+        <h1 style="font-size:24px;font-weight:bold;color:#111;margin:0">Welcome to SkiTech</h1>
+        <p style="color:#666;margin-top:8px">You've been invited to join the platform.</p>
+      </div>
 
-        <div style="background:#f5f4f0;border-radius:12px;padding:20px;margin:20px 0">
-            <p style="margin:0 0 8px;color:#555;font-size:14px">Your verification OTP (valid 5 minutes):</p>
-            <h1 style="letter-spacing:10px;margin:0;color:#111;font-size:32px">{otp}</h1>
-        </div>
+      <div style="background:#f5f4f0;border-radius:12px;padding:20px;margin-bottom:16px">
+        <p style="margin:0 0 6px;color:#888;font-size:13px;text-transform:uppercase;letter-spacing:0.5px">Temporary Password</p>
+        <code style="font-size:20px;font-weight:bold;color:#111;letter-spacing:2px">{temp_password}</code>
+      </div>
 
-        <p style="margin-bottom:20px">Click below to verify your email and activate your account:</p>
-        <a href="{verify_url}" style="display:inline-block;background:#111;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px">Verify My Account</a>
+      <div style="background:#f5f4f0;border-radius:12px;padding:20px;margin-bottom:24px">
+        <p style="margin:0 0 6px;color:#888;font-size:13px;text-transform:uppercase;letter-spacing:0.5px">Verification OTP <span style="color:#e07b00">(valid 5 min)</span></p>
+        <p style="font-size:36px;font-weight:bold;letter-spacing:12px;color:#111;margin:0">{otp}</p>
+      </div>
 
-        <p style="color:#888;font-size:13px;margin-top:24px">
-            After verification, log in at
-            <a href="{frontend_url}/auth/login" style="color:#555">{frontend_url}/auth/login</a>
-            using your email and temporary password.
-        </p>
-        <p style="color:#bbb;font-size:12px">If you did not expect this invitation, please ignore this email.</p>
-    </body></html>"""
+      <div style="text-align:center;margin-bottom:24px">
+        <a href="{verify_url}" style="display:inline-block;background:#111;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px">
+          Verify My Account
+        </a>
+      </div>
 
-    return _send_email(email, subject, body)
+      <p style="color:#999;font-size:12px;text-align:center">
+        After verification, log in at {frontend_url}/auth/login using your email and temporary password.
+      </p>
+    </div>
+    """
+
+    return _send_email(email, "You've been invited to SkiTech", html)
 
 
 def send_otp(email: str, purpose: str = "verification") -> bool:
     otp = generate_otp()
     save_otp(email, otp)
 
-    if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
+    if not settings.RESEND_API_KEY and not settings.SMTP_EMAIL:
         logger.info(f"[DEV OTP] {email} → {otp}")
         return True
 
     if purpose == "password_reset":
         subject = "SkiTech – Password Reset OTP"
-        body = f"""<html><body style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
-            <h2 style="color:#111">Password Reset</h2>
-            <p>Use this OTP to reset your password:</p>
-            <h1 style="letter-spacing:10px;color:#111;font-size:32px">{otp}</h1>
-            <p style="color:#888;font-size:13px">Valid for 5 minutes. If you did not request this, ignore this email.</p>
-        </body></html>"""
+        html = f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+          <h2 style="color:#111">Password Reset</h2>
+          <p>Use this OTP to reset your password:</p>
+          <p style="font-size:36px;font-weight:bold;letter-spacing:12px;color:#111">{otp}</p>
+          <p style="color:#888;font-size:13px">Valid for 5 minutes. If you did not request this, ignore this email.</p>
+        </div>"""
     else:
         subject = "SkiTech – Email Verification OTP"
-        body = f"""<html><body style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
-            <h2 style="color:#111">Welcome to SkiTech!</h2>
-            <p>Verify your email with this OTP:</p>
-            <h1 style="letter-spacing:10px;color:#111;font-size:32px">{otp}</h1>
-            <p style="color:#888;font-size:13px">Valid for 5 minutes.</p>
-        </body></html>"""
+        html = f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+          <h2 style="color:#111">Verify your email</h2>
+          <p>Enter this OTP to verify your account:</p>
+          <p style="font-size:36px;font-weight:bold;letter-spacing:12px;color:#111">{otp}</p>
+          <p style="color:#888;font-size:13px">Valid for 5 minutes.</p>
+        </div>"""
 
-    return _send_email(email, subject, body)
+    return _send_email(email, subject, html)
