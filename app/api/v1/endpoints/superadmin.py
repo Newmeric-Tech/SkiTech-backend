@@ -602,11 +602,14 @@ async def invite_user(
         tenant_id=tenant_id,
         property_id=data.get("property_id"),
         is_active=True,
-        is_verified=True,
+        is_verified=False,
     )
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
+
+    from app.utils.otp import send_invitation
+    send_invitation(email, temp_password)
 
     return {
         "id": str(new_user.id),
@@ -615,7 +618,7 @@ async def invite_user(
         "role": role_name,
         "property": data.get("property_id", ""),
         "last_active": "",
-        "status": "active",
+        "status": "pending",
     }
 
 

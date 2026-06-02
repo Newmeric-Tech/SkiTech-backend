@@ -134,6 +134,18 @@ async def verify_otp_route(data: OTPVerifyRequest, db: AsyncSession = Depends(ge
     return {"message": "Email verified. You can now log in."}
 
 
+@router.post("/resend-verification")
+async def resend_verification(data: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
+    """Resend email verification OTP for invited/unverified users."""
+    result = await db.execute(
+        select(User).where(User.email == data.email, User.deleted_at == None)
+    )
+    user = result.scalar_one_or_none()
+    if user and not user.is_verified:
+        send_otp(data.email, purpose="verification")
+    return {"message": "If that email has a pending verification, an OTP has been sent."}
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """

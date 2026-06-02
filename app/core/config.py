@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     S3_CHAT_BUCKET: str = "skitech-chat-files"                   # private
 
     BACKEND_URL: str = "http://localhost:8000"
+    FRONTEND_URL: str = "https://skitech-iota.vercel.app"
 
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None
