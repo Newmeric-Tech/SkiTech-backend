@@ -137,6 +137,9 @@ async def init_db() -> None:
         "ALTER TABLE conversation_participants ALTER COLUMN role TYPE participantrole USING role::participantrole;",
         "ALTER TABLE message_delivery_status ALTER COLUMN status TYPE messagestatus USING status::messagestatus;",
         "ALTER TABLE message_media ALTER COLUMN media_type TYPE mediatype USING media_type::mediatype;",
+        # OTP persistence — replaces in-memory store
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_code VARCHAR(6);",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expires_at TIMESTAMP;",
     ]
     for sql in migrations:
         try:
