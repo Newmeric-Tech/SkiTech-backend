@@ -48,7 +48,7 @@ def _fmt_log(log: AuditLog) -> dict:
 # ─── GET /activity-log/summary ────────────────────────────────
 @router.get("/summary")
 async def get_activity_summary(
-    days: int = Query(7, ge=1, le=90, description="Number of days to summarise"),
+    days: int = Query(7, ge=1, le=365, description="Number of days to summarise"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_obj),
 ):
