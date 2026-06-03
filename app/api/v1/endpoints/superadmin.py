@@ -617,8 +617,12 @@ async def invite_user(
     await db.commit()
     await db.refresh(new_user)
 
-    from app.utils.otp import send_invitation
-    background_tasks.add_task(send_invitation, email, temp_password)
+    from app.utils.otp import generate_otp, send_invitation
+    otp = generate_otp()
+    new_user.otp_code = otp
+    new_user.otp_expires_at = datetime.utcnow() + timedelta(seconds=300)
+    await db.commit()
+    background_tasks.add_task(send_invitation, email, temp_password, otp)
 
     return {
         "id": str(new_user.id),

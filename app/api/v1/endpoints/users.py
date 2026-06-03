@@ -27,7 +27,9 @@ from app.schemas.schemas import (
     ChangePasswordRequest, UserInviteRequest,
     UserResponse, UserRoleUpdate, UserUpdate,
 )
-from app.utils.otp import send_otp
+from datetime import datetime, timedelta
+
+from app.utils.otp import generate_otp, send_invitation
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -304,7 +306,11 @@ async def invite_user(
     await db.commit()
     await db.refresh(user)
 
-    # Send OTP for verification
-    send_otp(data.email, purpose="verification")
+    # Generate OTP, persist to DB, then send full invite email
+    otp = generate_otp()
+    user.otp_code = otp
+    user.otp_expires_at = datetime.utcnow() + timedelta(seconds=300)
+    await db.commit()
+    send_invitation(data.email, temp_password, otp)
 
     return user

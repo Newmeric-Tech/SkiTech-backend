@@ -1,47 +1,20 @@
 """
 OTP Service - app/utils/otp.py
+
+OTPs are generated here and persisted in the users table (otp_code, otp_expires_at).
+These functions only handle email delivery; callers save/verify OTPs via the DB.
 """
 
 import logging
 import random
-import time
 
 from app.core.config import settings
 
 logger = logging.getLogger("skitech")
 
-_otp_store: dict = {}
-OTP_EXPIRY_SECONDS = 300  # 5 minutes
-
 
 def generate_otp() -> str:
     return str(random.randint(100000, 999999))
-
-
-def save_otp(email: str, otp: str) -> None:
-    _otp_store[email] = {"otp": otp, "expires_at": time.time() + OTP_EXPIRY_SECONDS}
-
-
-def get_otp(email: str) -> str | None:
-    record = _otp_store.get(email)
-    if not record:
-        return None
-    if time.time() > record["expires_at"]:
-        delete_otp(email)
-        return None
-    return record["otp"]
-
-
-def delete_otp(email: str) -> None:
-    _otp_store.pop(email, None)
-
-
-def verify_otp(email: str, otp: str) -> bool:
-    stored = get_otp(email)
-    if stored and stored == otp:
-        delete_otp(email)
-        return True
-    return False
 
 
 def _send_email(to: str, subject: str, html: str) -> bool:
@@ -68,11 +41,9 @@ def _send_email(to: str, subject: str, html: str) -> bool:
         return False
 
 
-def send_invitation(email: str, temp_password: str) -> bool:
-    logger.info(f"[Invite] Background task started for {email}")
-
-    otp = generate_otp()
-    save_otp(email, otp)
+def send_invitation(email: str, temp_password: str, otp: str) -> bool:
+    """Send invite email with temp password + OTP + verify button."""
+    logger.info(f"[Invite] Sending invitation email to {email}")
 
     from urllib.parse import quote
     frontend_url = settings.FRONTEND_URL
@@ -104,10 +75,8 @@ def send_invitation(email: str, temp_password: str) -> bool:
     return _send_email(email, "You've been invited to SkiTech", html)
 
 
-def send_otp(email: str, purpose: str = "verification") -> bool:
-    otp = generate_otp()
-    save_otp(email, otp)
-
+def send_otp(email: str, otp: str, purpose: str = "verification") -> bool:
+    """Send a plain OTP email (resend-verification or password-reset)."""
     if purpose == "password_reset":
         subject = "SkiTech – Password Reset OTP"
         html = f"""

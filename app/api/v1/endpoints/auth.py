@@ -30,7 +30,9 @@ from app.schemas.schemas import (
     GoogleAuthRequest, LoginRequest, OTPVerifyRequest, PasswordResetConfirm,
     PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse, SuperAdminLoginRequest
 )
-from app.utils.otp import send_otp, verify_otp
+from datetime import timedelta
+
+from app.utils.otp import generate_otp, send_otp
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -85,13 +87,17 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
                 raise HTTPException(status_code=400, detail="Email already registered")
             raise HTTPException(status_code=400, detail=f"Database error: {error_msg[:100]}")
 
-        # Send OTP and verify it was sent
-        otp_sent = send_otp(data.email, purpose="verification")
-        
+        # Generate OTP, persist to DB, then send verification email
+        otp = generate_otp()
+        user.otp_code = otp
+        user.otp_expires_at = datetime.utcnow() + timedelta(seconds=300)
+        await db.commit()
+
+        otp_sent = send_otp(data.email, otp, purpose="verification")
+
         if not otp_sent:
-            # OTP failed to send - still return user created but inform them
             return {
-                "message": "Registration successful, but OTP email failed to send. Please check your email configuration or try the verify-otp endpoint manually if you have the OTP.",
+                "message": "Registration successful, but OTP email failed to send. Please check your email configuration.",
                 "email": data.email,
                 "warning": "OTP email delivery failed"
             }
@@ -116,19 +122,24 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/verify-otp")
 async def verify_otp_route(data: OTPVerifyRequest, db: AsyncSession = Depends(get_db)):
     """Verify email OTP and activate account."""
-    if not verify_otp(data.email, data.otp):
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-
-    result = await db.execute(select(User).where(User.email == data.email))
+    result = await db.execute(
+        select(User).where(User.email == data.email, User.deleted_at.is_(None))
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    # Prevent verification of soft-deleted accounts
-    if user.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="This account has been deleted")
+
+    if (
+        not user.otp_code
+        or user.otp_code != data.otp
+        or not user.otp_expires_at
+        or user.otp_expires_at < datetime.utcnow()
+    ):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
 
     user.is_verified = True
+    user.otp_code = None
+    user.otp_expires_at = None
     await db.commit()
 
     return {"message": "Email verified. You can now log in."}
@@ -138,11 +149,15 @@ async def verify_otp_route(data: OTPVerifyRequest, db: AsyncSession = Depends(ge
 async def resend_verification(data: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
     """Resend email verification OTP for invited/unverified users."""
     result = await db.execute(
-        select(User).where(User.email == data.email, User.deleted_at == None)
+        select(User).where(User.email == data.email, User.deleted_at.is_(None))
     )
     user = result.scalar_one_or_none()
     if user and not user.is_verified:
-        send_otp(data.email, purpose="verification")
+        otp = generate_otp()
+        user.otp_code = otp
+        user.otp_expires_at = datetime.utcnow() + timedelta(seconds=300)
+        await db.commit()
+        send_otp(data.email, otp, purpose="verification")
     return {"message": "If that email has a pending verification, an OTP has been sent."}
 
 
@@ -407,35 +422,39 @@ async def refresh_token(data: RefreshTokenRequest):
 async def forgot_password(data: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
     """Send OTP for password reset."""
     result = await db.execute(
-        select(User).where(
-            User.email == data.email,
-            User.deleted_at == None,
-        )
+        select(User).where(User.email == data.email, User.deleted_at.is_(None))
     )
     user = result.scalar_one_or_none()
-    # Always return success to avoid email enumeration
     if user:
-        send_otp(data.email, purpose="password_reset")
+        otp = generate_otp()
+        user.otp_code = otp
+        user.otp_expires_at = datetime.utcnow() + timedelta(seconds=300)
+        await db.commit()
+        send_otp(data.email, otp, purpose="password_reset")
     return {"message": "If that email is registered, an OTP has been sent."}
 
 
 @router.post("/reset-password")
 async def reset_password(data: PasswordResetConfirm, db: AsyncSession = Depends(get_db)):
     """Reset password using OTP."""
-    if not verify_otp(data.email, data.otp):
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-
     result = await db.execute(
-        select(User).where(
-            User.email == data.email,
-            User.deleted_at == None,
-        )
+        select(User).where(User.email == data.email, User.deleted_at.is_(None))
     )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if (
+        not user.otp_code
+        or user.otp_code != data.otp
+        or not user.otp_expires_at
+        or user.otp_expires_at < datetime.utcnow()
+    ):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
     user.password_hash = hash_password(data.new_password)
+    user.otp_code = None
+    user.otp_expires_at = None
     await db.commit()
 
     return {"message": "Password reset successfully."}
