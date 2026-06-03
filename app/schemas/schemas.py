@@ -206,7 +206,7 @@ class EmployeeCreate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     employee_code: Optional[str] = None
-    role_id: UUID
+    role_id: Optional[UUID] = None  # defaults to Staff role if omitted
     department_id: Optional[UUID] = None
     position: Optional[str] = None
     start_date: Optional[datetime] = None
