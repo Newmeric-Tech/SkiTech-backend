@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.models import (
-    AuditLog, DemoRequest, Property, Role, RolePermission, User,
+    AuditLog, DemoRequest, Property, Role, RolePermission, Tenant, User,
 )
 
 router = APIRouter(prefix="/superadmin", tags=["Superadmin"])
@@ -595,12 +595,29 @@ async def invite_user(
     import secrets
     temp_password = secrets.token_urlsafe(16)
 
-    tenant_id = data.get("tenant_id") or (user.get("tenant_id") or None)
-    if not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required when inviting a user. Provide the target tenant's ID.",
+    # Owners always get their own isolated tenant.
+    # For Manager/Staff, tenant_id must be supplied explicitly.
+    if role_name == "Tenant Admin":
+        business_name = data.get("business_name") or f"{full_name}'s Business"
+        new_tenant = Tenant(
+            business_name=business_name,
+            business_type=data.get("business_type", "hotel"),
+            owner_name=full_name,
+            contact_email=email,
+            subscription_status="active",
+            is_active=True,
         )
+        db.add(new_tenant)
+        await db.commit()
+        await db.refresh(new_tenant)
+        tenant_id = str(new_tenant.id)
+    else:
+        tenant_id = data.get("tenant_id") or None
+        if not tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="tenant_id is required when inviting a Manager or Staff member.",
+            )
 
     new_user = User(
         email=email,
@@ -629,6 +646,7 @@ async def invite_user(
         "name": full_name,
         "email": new_user.email,
         "role": role_name,
+        "tenant_id": str(new_user.tenant_id),
         "property": data.get("property_id", ""),
         "last_active": "",
         "status": "pending",
