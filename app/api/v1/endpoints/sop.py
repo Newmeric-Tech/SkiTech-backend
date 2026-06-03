@@ -245,6 +245,15 @@ async def list_versions(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("view_sop")),
 ):
+    # Verify the parent SOP belongs to the caller's tenant before listing versions
+    sop_check = await db.execute(
+        select(SOPItem).where(
+            SOPItem.id == sop_id,
+            SOPItem.tenant_id == UUID(user["tenant_id"]),
+        )
+    )
+    if not sop_check.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="SOP not found")
     result = await db.execute(
         select(SOPVersion).where(SOPVersion.sop_item_id == sop_id)
     )

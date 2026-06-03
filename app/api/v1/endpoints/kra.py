@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db as get_db_session
+from app.api.dependencies import get_current_user
 from app.schemas.common import PaginatedResponse
 from app.schemas.kra import (
     KRAComplianceResponse,
@@ -27,9 +28,13 @@ from app.utils.exceptions import NotFoundError
 router = APIRouter(prefix="/kra", tags=["KRA"])
 
 
-async def get_current_user_context():
-    """Placeholder user context — replace with JWT extraction in production."""
-    return {"tenant_id": 1, "user_id": 1, "role": "staff"}
+async def get_current_user_context(user: dict = Depends(get_current_user)):
+    """Extract user context from JWT for KRA endpoints."""
+    return {
+        "tenant_id": user["tenant_id"],
+        "user_id": user["user_id"],
+        "role": user.get("role", "staff"),
+    }
 
 
 def resolve_pagination(skip: int, limit: int, page: Optional[int], page_size: Optional[int]) -> tuple[int, int]:

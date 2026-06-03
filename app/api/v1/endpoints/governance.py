@@ -40,6 +40,7 @@ async def list_workflows(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    # GovernanceWorkflow templates are global (no tenant column); auth is still required
     result = await db.execute(
         select(GovernanceWorkflow).where(GovernanceWorkflow.deleted_at == None)
     )
@@ -67,8 +68,15 @@ async def list_instances(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    from app.models.models import User as UserModel
+    # Scope to current tenant: only return instances whose requester belongs to this tenant
     result = await db.execute(
-        select(WorkflowInstance).where(WorkflowInstance.deleted_at == None)
+        select(WorkflowInstance)
+        .join(UserModel, WorkflowInstance.requested_by_id == UserModel.id)
+        .where(
+            UserModel.tenant_id == UUID(user["tenant_id"]),
+            WorkflowInstance.deleted_at == None,
+        )
     )
     return result.scalars().all()
 
@@ -79,8 +87,14 @@ async def approve_instance(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_roles(["Super Admin", "Tenant Admin", "Manager"])),
 ):
+    from app.models.models import User as UserModel
     result = await db.execute(
-        select(WorkflowInstance).where(WorkflowInstance.id == instance_id)
+        select(WorkflowInstance)
+        .join(UserModel, WorkflowInstance.requested_by_id == UserModel.id)
+        .where(
+            WorkflowInstance.id == instance_id,
+            UserModel.tenant_id == UUID(user["tenant_id"]),
+        )
     )
     instance = result.scalar_one_or_none()
     if not instance:
@@ -102,8 +116,14 @@ async def reject_instance(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_roles(["Super Admin", "Tenant Admin", "Manager"])),
 ):
+    from app.models.models import User as UserModel
     result = await db.execute(
-        select(WorkflowInstance).where(WorkflowInstance.id == instance_id)
+        select(WorkflowInstance)
+        .join(UserModel, WorkflowInstance.requested_by_id == UserModel.id)
+        .where(
+            WorkflowInstance.id == instance_id,
+            UserModel.tenant_id == UUID(user["tenant_id"]),
+        )
     )
     instance = result.scalar_one_or_none()
     if not instance:

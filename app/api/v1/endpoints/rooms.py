@@ -94,10 +94,11 @@ async def create_room(
     """Create a new room for a property."""
     tenant_id = UUID(user["tenant_id"])
 
-    # Check duplicate room number in same property
+    # Check duplicate room number in same property (scoped to tenant)
     dup = await db.execute(
         select(Room).where(
             Room.property_id == property_id,
+            Room.tenant_id == tenant_id,
             Room.room_number == data.room_number,
             Room.deleted_at == None,
         )
