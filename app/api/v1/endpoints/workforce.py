@@ -113,6 +113,7 @@ async def create_employee(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("manage_staff")),
 ):
+    import secrets as _secrets
     emp_data = data.model_dump()
 
     if not emp_data.get("role_id"):
@@ -120,6 +121,9 @@ async def create_employee(
         staff_role = role_result.scalar_one_or_none()
         if staff_role:
             emp_data["role_id"] = staff_role.id
+
+    if not emp_data.get("employee_code"):
+        emp_data["employee_code"] = "EMP-" + _secrets.token_hex(3).upper()
 
     emp = Employee(
         tenant_id=UUID(user["tenant_id"]),
