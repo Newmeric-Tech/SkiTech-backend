@@ -24,7 +24,7 @@ from app.core.database import get_db
 from app.core.security import hash_password, verify_password
 from app.models.models import Role, User
 from app.schemas.schemas import (
-    ChangePasswordRequest, UserInviteRequest,
+    ChangePasswordRequest, UserInviteRequest, UserPropertyAssign,
     UserResponse, UserRoleUpdate, UserUpdate,
 )
 from datetime import datetime, timedelta
@@ -210,6 +210,35 @@ async def update_user_role(
         raise HTTPException(status_code=404, detail="Role not found")
 
     user.role_id = data.role_id
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.put("/{user_id}/property", response_model=UserResponse)
+async def assign_user_property(
+    user_id: UUID,
+    data: UserPropertyAssign,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
+):
+    """Assign or reassign a property to a user (Manager/Staff)."""
+    from app.models.models import Property
+    user = await _get_user_or_404(db, user_id, UUID(current_user["tenant_id"]))
+
+    if data.property_id:
+        prop_result = await db.execute(
+            select(Property).where(
+                Property.id == data.property_id,
+                Property.tenant_id == UUID(current_user["tenant_id"]),
+            )
+        )
+        if not prop_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Property not found")
+        user.property_id = data.property_id
+    else:
+        user.property_id = None
+
     await db.commit()
     await db.refresh(user)
     return user

@@ -535,6 +535,10 @@ class UserInviteRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
 
+
+class UserPropertyAssign(BaseModel):
+    property_id: Optional[UUID] = None
+
 # ===========================================================
 # STATS / DASHBOARD
 # ===========================================================
