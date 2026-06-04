@@ -51,6 +51,10 @@ class AssignPlanRequest(BaseModel):
     start_date: Optional[datetime] = None
 
 
+class SelectPlanRequest(BaseModel):
+    plan_id: UUID
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _get_active_subscription(db: AsyncSession, tenant_id: UUID):
@@ -64,6 +68,26 @@ async def _get_active_subscription(db: AsyncSession, tenant_id: UUID):
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def _auto_assign_starter(db: AsyncSession, tenant_id: UUID):
+    """Find the lowest-price plan and assign it as the tenant's active subscription."""
+    plan_result = await db.execute(
+        select(SubscriptionPlan).order_by(SubscriptionPlan.price).limit(1)
+    )
+    starter = plan_result.scalar_one_or_none()
+    if not starter:
+        raise HTTPException(status_code=503, detail="No subscription plans configured. Contact support.")
+    sub = TenantSubscription(
+        tenant_id=tenant_id,
+        plan_id=starter.id,
+        start_date=datetime.utcnow(),
+        status="active",
+    )
+    db.add(sub)
+    await db.commit()
+    await db.refresh(sub)
+    return sub, starter
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -83,19 +107,20 @@ async def get_my_plan(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Get the current tenant's active subscription plan and feature flags."""
+    """Get the current tenant's active subscription plan. Auto-assigns Starter if none exists."""
     tenant_id = UUID(user["tenant_id"])
 
     sub = await _get_active_subscription(db, tenant_id)
-    if not sub:
-        raise HTTPException(status_code=404, detail="No active subscription found for this tenant")
 
-    plan_result = await db.execute(
-        select(SubscriptionPlan).where(SubscriptionPlan.id == sub.plan_id)
-    )
-    plan = plan_result.scalar_one_or_none()
-    if not plan:
-        raise HTTPException(status_code=404, detail="Subscription plan not found")
+    if not sub:
+        sub, plan = await _auto_assign_starter(db, tenant_id)
+    else:
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == sub.plan_id)
+        )
+        plan = plan_result.scalar_one_or_none()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Subscription plan not found")
 
     features = plan.features or {}
 
@@ -116,6 +141,60 @@ async def get_my_plan(
     )
 
 
+@router.post("/select-plan", response_model=MyPlanResponse)
+async def select_plan(
+    data: SelectPlanRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
+):
+    """Allow a Tenant Admin to choose their subscription plan."""
+    tenant_id = UUID(user["tenant_id"])
+
+    plan_result = await db.execute(
+        select(SubscriptionPlan).where(SubscriptionPlan.id == data.plan_id)
+    )
+    plan = plan_result.scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    # Expire any existing active subscriptions
+    existing = await db.execute(
+        select(TenantSubscription).where(
+            TenantSubscription.tenant_id == tenant_id,
+            TenantSubscription.status == "active",
+        )
+    )
+    for old_sub in existing.scalars().all():
+        old_sub.status = "expired"
+
+    new_sub = TenantSubscription(
+        tenant_id=tenant_id,
+        plan_id=plan.id,
+        start_date=datetime.utcnow(),
+        status="active",
+    )
+    db.add(new_sub)
+    await db.commit()
+    await db.refresh(new_sub)
+
+    features = plan.features or {}
+    return MyPlanResponse(
+        subscription_id=new_sub.id,
+        status=new_sub.status,
+        start_date=new_sub.start_date,
+        end_date=new_sub.end_date,
+        plan=PlanResponse(
+            id=plan.id,
+            name=plan.name,
+            price=float(plan.price),
+            max_properties=plan.max_properties,
+            max_users=plan.max_users,
+            features=features,
+        ),
+        features=features,
+    )
+
+
 @router.post("/assign")
 async def assign_plan(
     data: AssignPlanRequest,
@@ -123,7 +202,6 @@ async def assign_plan(
     user: dict = Depends(require_roles(["Super Admin"])),
 ):
     """Assign a subscription plan to a tenant. Deactivates the previous active plan."""
-    # Deactivate existing active subscriptions for this tenant
     existing = await db.execute(
         select(TenantSubscription).where(
             TenantSubscription.tenant_id == data.tenant_id,

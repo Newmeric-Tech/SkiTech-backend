@@ -144,16 +144,36 @@ def require_feature(feature_name: str):
             .limit(1)
         )
         sub = sub_result.scalar_one_or_none()
-        if not sub:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No active subscription. Please contact your administrator.",
-            )
 
-        plan_result = await db.execute(
-            select(SubscriptionPlan).where(SubscriptionPlan.id == sub.plan_id)
-        )
-        plan = plan_result.scalar_one_or_none()
+        if not sub:
+            # Auto-assign the lowest-price (Starter) plan so the tenant is never blocked
+            from datetime import datetime
+            starter_result = await db.execute(
+                select(SubscriptionPlan).order_by(SubscriptionPlan.price).limit(1)
+            )
+            starter = starter_result.scalar_one_or_none()
+            if starter:
+                sub = TenantSubscription(
+                    tenant_id=tenant_id,
+                    plan_id=starter.id,
+                    start_date=datetime.utcnow(),
+                    status="active",
+                )
+                db.add(sub)
+                await db.commit()
+                await db.refresh(sub)
+                plan = starter
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No subscription plans configured. Please contact support.",
+                )
+        else:
+            plan_result = await db.execute(
+                select(SubscriptionPlan).where(SubscriptionPlan.id == sub.plan_id)
+            )
+            plan = plan_result.scalar_one_or_none()
+
         features = (plan.features or {}) if plan else {}
 
         if not features.get(feature_name, False):
