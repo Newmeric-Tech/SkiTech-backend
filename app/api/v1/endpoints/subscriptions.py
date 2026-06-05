@@ -6,6 +6,7 @@ GET  /subscriptions/my-plan                 → current tenant's active plan + f
 POST /subscriptions/select-plan             → tenant admin selects plan (free/downgrade)
 POST /subscriptions/assign                  → superadmin assigns plan to tenant
 POST /subscriptions/create-checkout-session → create Stripe checkout for paid upgrade
+POST /subscriptions/verify-session          → verify completed Stripe session & activate plan
 POST /subscriptions/create-portal-session   → Stripe billing portal (manage/cancel)
 POST /subscriptions/webhook                 → Stripe webhook handler (signature verified)
 """
@@ -293,7 +294,7 @@ async def create_checkout_session(
                 "quantity": 1,
             }],
             mode="subscription",
-            success_url=f"{frontend_url}/owner/settings?tab=billing&payment=success",
+            success_url=f"{frontend_url}/owner/settings?tab=billing&payment=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{frontend_url}/owner/settings?tab=billing&payment=cancelled",
             metadata={
                 "tenant_id": str(tenant_id),
@@ -311,6 +312,89 @@ async def create_checkout_session(
         raise HTTPException(status_code=502, detail=f"Payment service error: {str(e)}")
 
     return {"session_url": session.url, "session_id": session.id}
+
+
+@router.post("/verify-session", response_model=MyPlanResponse)
+async def verify_checkout_session(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
+):
+    """
+    Called by frontend immediately after Stripe redirects back on success.
+    Retrieves the session from Stripe, and if paid + not yet processed, activates the plan.
+    This handles the race condition where the webhook hasn't fired yet.
+    """
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Payment service not configured")
+
+    session_id = data.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id required")
+
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+    except stripe.StripeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    if session.payment_status != "paid":
+        raise HTTPException(status_code=400, detail="Payment not completed")
+
+    metadata = session.metadata or {}
+    tenant_id_str = metadata.get("tenant_id")
+    plan_id_str = metadata.get("plan_id")
+
+    if not tenant_id_str or not plan_id_str:
+        raise HTTPException(status_code=400, detail="Invalid session metadata")
+
+    # Security: session must belong to the calling user's tenant
+    if tenant_id_str != user["tenant_id"]:
+        raise HTTPException(status_code=403, detail="Session does not belong to your account")
+
+    tenant_id = UUID(tenant_id_str)
+    plan_id = UUID(plan_id_str)
+
+    plan_result = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id))
+    plan = plan_result.scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    # If already on this plan (webhook already processed), just return current state
+    active_sub = await _get_active_subscription(db, tenant_id)
+    if active_sub and str(active_sub.plan_id) == plan_id_str:
+        return _build_my_plan_response(active_sub, plan)
+
+    # Expire existing active subscriptions
+    existing = await db.execute(
+        select(TenantSubscription).where(
+            TenantSubscription.tenant_id == tenant_id,
+            TenantSubscription.status == "active",
+        )
+    )
+    for old_sub in existing.scalars().all():
+        old_sub.status = "expired"
+
+    # Activate new plan
+    new_sub = TenantSubscription(
+        tenant_id=tenant_id,
+        plan_id=plan_id,
+        start_date=datetime.utcnow(),
+        status="active",
+        stripe_subscription_id=session.subscription,
+    )
+    db.add(new_sub)
+
+    # Store stripe_customer_id on tenant
+    if session.customer:
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+        tenant = tenant_result.scalar_one_or_none()
+        if tenant:
+            tenant.stripe_customer_id = session.customer
+
+    await db.commit()
+    await db.refresh(new_sub)
+    logger.info(f"Tenant {tenant_id} activated plan {plan.name} via session verify")
+    return _build_my_plan_response(new_sub, plan)
 
 
 @router.post("/create-portal-session")

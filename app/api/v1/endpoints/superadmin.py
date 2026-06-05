@@ -788,6 +788,30 @@ async def list_demo_requests(
     ]
 
 
+@router.delete("/tenants/{tenant_id}")
+async def delete_tenant(
+    tenant_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_superadmin),
+) -> Any:
+    """Soft-delete a tenant record (marks deleted_at)."""
+    from uuid import UUID as _UUID
+    try:
+        tid = _UUID(tenant_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid tenant_id")
+
+    tenant = (await db.execute(
+        select(Tenant).where(Tenant.id == tid, Tenant.deleted_at == None)
+    )).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    tenant.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"success": True, "message": f"Tenant '{tenant.business_name}' deleted"}
+
+
 @router.get("/subscriptions")
 async def list_tenant_subscriptions(
     db: AsyncSession = Depends(get_db),
