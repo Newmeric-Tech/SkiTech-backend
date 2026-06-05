@@ -544,22 +544,35 @@ async def list_users(
     # Reverse map: DB role name → display name
     _DB_TO_DISPLAY = {v: k for k, v in _ROLE_DISPLAY_MAP.items()}
 
+    # Build property UUID → name map up front (one query, no N+1)
+    property_ids = {u.property_id for u in users if u.property_id}
+    property_name_map: dict = {}
+    if property_ids:
+        props = (await db.execute(
+            select(Property.id, Property.name).where(Property.id.in_(property_ids))
+        )).fetchall()
+        property_name_map = {str(row.id): row.name for row in props}
+
+    # Build role id → display name map up front
+    role_ids = {u.role_id for u in users}
+    roles_fetched = (await db.execute(
+        select(Role).where(Role.id.in_(role_ids))
+    )).scalars().all()
+    role_map = {str(r.id): _DB_TO_DISPLAY.get(r.name, r.name) for r in roles_fetched}
+
     result = []
     for u in users:
-        role_obj = (await db.execute(
-            select(Role).where(Role.id == u.role_id)
-        )).scalar_one_or_none()
-        role_name = role_obj.name if role_obj else "Unknown"
-        display_role = _DB_TO_DISPLAY.get(role_name, role_name)
-
-
+        display_role = role_map.get(str(u.role_id), "Unknown")
         name = " ".join(filter(None, [u.first_name, u.last_name])) or u.email.split("@")[0]
+        prop_id_str = str(u.property_id) if u.property_id else ""
+        prop_name = property_name_map.get(prop_id_str, "") if prop_id_str else ""
         result.append({
             "id": str(u.id),
             "name": name,
             "email": u.email,
             "role": display_role,
-            "property": str(u.property_id) if u.property_id else "",
+            "property": prop_name,          # human-readable name now
+            "property_id": prop_id_str,     # raw id still available
             "last_active": u.last_login.isoformat() if u.last_login else "",
             "status": "pending" if not u.is_verified else ("active" if u.is_active else "suspended"),
             "is_verified": u.is_verified,
@@ -634,6 +647,14 @@ async def invite_user(
                 detail="tenant_id is required when inviting a Manager or Staff member.",
             )
 
+    # Managers and Staff must be linked to a specific property
+    property_id = data.get("property_id") or None
+    if role_name in ("Manager", "Staff") and not property_id:
+        raise HTTPException(
+            status_code=400,
+            detail="property_id is required when inviting a Manager or Staff member.",
+        )
+
     new_user = User(
         email=email,
         password_hash=hash_password(temp_password),
@@ -641,7 +662,7 @@ async def invite_user(
         last_name=last_name,
         role_id=role_obj.id,
         tenant_id=tenant_id,
-        property_id=data.get("property_id"),
+        property_id=property_id,
         is_active=True,
         is_verified=False,
     )
