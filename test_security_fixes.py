@@ -1,3 +1,4 @@
+
 """
 Test script to validate security fixes for authentication issues
 Run this to verify the role assignment vulnerability is fixed
