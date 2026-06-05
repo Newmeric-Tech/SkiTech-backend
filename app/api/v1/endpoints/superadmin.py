@@ -794,22 +794,35 @@ async def delete_tenant(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
-    """Soft-delete a tenant record (marks deleted_at)."""
+    """Soft-delete a tenant (sets deleted_at). Does not remove data."""
     from uuid import UUID as _UUID
     try:
         tid = _UUID(tenant_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid tenant_id")
 
-    tenant = (await db.execute(
-        select(Tenant).where(Tenant.id == tid, Tenant.deleted_at == None)
-    )).scalar_one_or_none()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
+    try:
+        result = await db.execute(
+            select(Tenant).where(Tenant.id == tid, Tenant.deleted_at == None)
+        )
+        tenant = result.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
 
-    tenant.deleted_at = datetime.now(timezone.utc)
-    await db.commit()
-    return {"success": True, "message": f"Tenant '{tenant.business_name}' deleted"}
+        business_name = tenant.business_name
+        await db.execute(
+            update(Tenant)
+            .where(Tenant.id == tid)
+            .values(deleted_at=datetime.utcnow(), is_active=False)
+        )
+        await db.commit()
+        return {"success": True, "message": f"Tenant '{business_name}' deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to delete tenant {tenant_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
 
 
 @router.get("/subscriptions")
