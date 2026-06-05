@@ -844,30 +844,39 @@ async def list_tenant_subscriptions(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
-    """List all client tenants — excludes any tenant that has a Super Admin user."""
-    # Subquery: tenant_ids that contain at least one Super Admin user
-    superadmin_tenant_ids = (
-        select(User.tenant_id)
-        .join(Role, User.role_id == Role.id)
-        .where(Role.name == "Super Admin", User.deleted_at == None)
-        .distinct()
-    )
+    """
+    Returns one row per Tenant Admin user (not per tenant).
+    This ensures every owner appears regardless of who else shares their tenant.
+    """
+    # All active Tenant Admin users
+    tenant_admin_role = (await db.execute(
+        select(Role).where(Role.name == "Tenant Admin")
+    )).scalar_one_or_none()
 
-    tenants_result = await db.execute(
-        select(Tenant)
+    if not tenant_admin_role:
+        return {"tenants": [], "plans": []}
+
+    tenant_admins = (await db.execute(
+        select(User)
         .where(
-            Tenant.deleted_at == None,
-            Tenant.id.not_in(superadmin_tenant_ids),
+            User.role_id == tenant_admin_role.id,
+            User.deleted_at == None,
+            User.is_active == True,
         )
-        .order_by(Tenant.created_at.desc())
-    )
-    tenants = tenants_result.scalars().all()
+        .order_by(User.created_at.desc())
+    )).scalars().all()
 
-    # Fetch all active subscriptions (one per tenant)
+    # Fetch all active subscriptions keyed by tenant_id
     subs_result = await db.execute(
         select(TenantSubscription).where(TenantSubscription.status == "active")
     )
     active_subs = {sub.tenant_id: sub for sub in subs_result.scalars().all()}
+
+    # Fetch all tenants (non-deleted) keyed by id
+    tenants_result = await db.execute(
+        select(Tenant).where(Tenant.deleted_at == None)
+    )
+    tenants_by_id = {t.id: t for t in tenants_result.scalars().all()}
 
     # Fetch all plans
     plans_result = await db.execute(
@@ -876,16 +885,22 @@ async def list_tenant_subscriptions(
     plans = plans_result.scalars().all()
     plans_by_id = {p.id: p for p in plans}
 
-    tenant_rows = []
-    for t in tenants:
-        sub = active_subs.get(t.id)
+    rows = []
+    for u in tenant_admins:
+        tenant = tenants_by_id.get(u.tenant_id)
+        if not tenant:
+            continue
+        sub = active_subs.get(u.tenant_id)
         plan = plans_by_id.get(sub.plan_id) if sub else None
-        tenant_rows.append({
-            "tenant_id": str(t.id),
-            "business_name": t.business_name,
-            "contact_email": t.contact_email or "",
-            "subscription_status": t.subscription_status,
-            "stripe_customer_id": t.stripe_customer_id,
+        name = " ".join(filter(None, [u.first_name, u.last_name])) or u.email.split("@")[0]
+        rows.append({
+            "tenant_id": str(u.tenant_id),
+            "user_id": str(u.id),
+            "user_name": name,
+            "business_name": tenant.business_name,
+            "contact_email": u.email,
+            "subscription_status": tenant.subscription_status,
+            "stripe_customer_id": tenant.stripe_customer_id,
             "current_plan": {
                 "id": str(plan.id),
                 "name": plan.name,
@@ -898,7 +913,7 @@ async def list_tenant_subscriptions(
         })
 
     return {
-        "tenants": tenant_rows,
+        "tenants": rows,
         "plans": [
             {
                 "id": str(p.id),
