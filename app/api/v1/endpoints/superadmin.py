@@ -830,19 +830,21 @@ async def list_tenant_subscriptions(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
-    """List tenants that have a Tenant Admin user (excludes superadmin-only tenants)."""
-    # Only return tenants that have at least one active Tenant Admin user
-    tenant_admin_tenant_ids = select(User.tenant_id).join(
-        Role, User.role_id == Role.id
-    ).where(
-        Role.name == "Tenant Admin",
-        User.deleted_at == None,
-        User.is_active == True,
-    ).distinct()
+    """List all client tenants — excludes any tenant that has a Super Admin user."""
+    # Subquery: tenant_ids that contain at least one Super Admin user
+    superadmin_tenant_ids = (
+        select(User.tenant_id)
+        .join(Role, User.role_id == Role.id)
+        .where(Role.name == "Super Admin", User.deleted_at == None)
+        .distinct()
+    )
 
     tenants_result = await db.execute(
         select(Tenant)
-        .where(Tenant.deleted_at == None, Tenant.id.in_(tenant_admin_tenant_ids))
+        .where(
+            Tenant.deleted_at == None,
+            Tenant.id.not_in(superadmin_tenant_ids),
+        )
         .order_by(Tenant.created_at.desc())
     )
     tenants = tenants_result.scalars().all()
