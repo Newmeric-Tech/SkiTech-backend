@@ -35,6 +35,9 @@ pytz==2024.1
 requests==2.31.0
 httpx==0.27.0
 
+# Stripe Payment Integration
+stripe==10.4.0
+
 # Testing
 pytest==7.4.0
 pytest-asyncio==0.23.6

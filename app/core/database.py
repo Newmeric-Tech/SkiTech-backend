@@ -140,6 +140,10 @@ async def init_db() -> None:
         # OTP persistence — replaces in-memory store
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_code VARCHAR(6);",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expires_at TIMESTAMP;",
+        # Stripe payment integration
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(100);",
+        "ALTER TABLE tenant_subscriptions ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(100);",
+        "ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(100);",
     ]
     for sql in migrations:
         try:

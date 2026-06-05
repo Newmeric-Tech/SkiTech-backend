@@ -84,6 +84,7 @@ class SubscriptionPlan(Base, UUIDMixin, TimestampMixin):
     max_properties = Column(Integer)
     max_users = Column(Integer)
     features = Column(JSONB)
+    stripe_price_id = Column(String(100), nullable=True)
 
 
 class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
@@ -96,6 +97,7 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     contact_phone = Column(String(20))
     subscription_status = Column(String(50), nullable=False, default="active")
     is_active = Column(Boolean, nullable=False, default=True)
+    stripe_customer_id = Column(String(100), nullable=True)
 
     __table_args__ = (
         CheckConstraint("business_type IN ('hotel','restaurant','other')", name="check_business_type"),
@@ -116,6 +118,7 @@ class TenantSubscription(Base, UUIDMixin, TimestampMixin):
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime)
     status = Column(String(50), nullable=False)
+    stripe_subscription_id = Column(String(100), nullable=True)
 
     __table_args__ = (
         CheckConstraint("end_date IS NULL OR end_date > start_date", name="check_subscription_dates"),

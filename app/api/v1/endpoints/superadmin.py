@@ -22,6 +22,7 @@ from app.api.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.models import (
     AuditLog, DemoRequest, Property, Role, RolePermission, Tenant, User,
+    SubscriptionPlan, TenantSubscription,
 )
 
 router = APIRouter(prefix="/superadmin", tags=["Superadmin"])
@@ -785,6 +786,67 @@ async def list_demo_requests(
         }
         for r in rows
     ]
+
+
+@router.get("/subscriptions")
+async def list_tenant_subscriptions(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_superadmin),
+) -> Any:
+    """List all tenants with their current active subscription and plan."""
+    # Fetch all non-deleted tenants
+    tenants_result = await db.execute(
+        select(Tenant).where(Tenant.deleted_at == None).order_by(Tenant.created_at.desc())
+    )
+    tenants = tenants_result.scalars().all()
+
+    # Fetch all active subscriptions (one per tenant)
+    subs_result = await db.execute(
+        select(TenantSubscription).where(TenantSubscription.status == "active")
+    )
+    active_subs = {sub.tenant_id: sub for sub in subs_result.scalars().all()}
+
+    # Fetch all plans
+    plans_result = await db.execute(
+        select(SubscriptionPlan).order_by(SubscriptionPlan.price)
+    )
+    plans = plans_result.scalars().all()
+    plans_by_id = {p.id: p for p in plans}
+
+    tenant_rows = []
+    for t in tenants:
+        sub = active_subs.get(t.id)
+        plan = plans_by_id.get(sub.plan_id) if sub else None
+        tenant_rows.append({
+            "tenant_id": str(t.id),
+            "business_name": t.business_name,
+            "contact_email": t.contact_email or "",
+            "subscription_status": t.subscription_status,
+            "stripe_customer_id": t.stripe_customer_id,
+            "current_plan": {
+                "id": str(plan.id),
+                "name": plan.name,
+                "price": float(plan.price),
+                "max_properties": plan.max_properties,
+                "max_users": plan.max_users,
+            } if plan else None,
+            "subscription_start_date": sub.start_date.isoformat() if sub else None,
+            "stripe_subscription_id": sub.stripe_subscription_id if sub else None,
+        })
+
+    return {
+        "tenants": tenant_rows,
+        "plans": [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "price": float(p.price),
+                "max_properties": p.max_properties,
+                "max_users": p.max_users,
+            }
+            for p in plans
+        ],
+    }
 
 
 @router.put("/demo-requests/{request_id}/status")
