@@ -861,7 +861,6 @@ async def list_tenant_subscriptions(
         .where(
             User.role_id == tenant_admin_role.id,
             User.deleted_at == None,
-            User.is_active == True,
         )
         .order_by(User.created_at.desc())
     )).scalars().all()
