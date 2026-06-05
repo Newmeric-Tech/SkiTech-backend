@@ -525,9 +525,24 @@ async def list_users(
             )
         )
 
-    users = (await db.execute(
-        select(User).where(and_(*filters)).offset(skip).limit(limit)
-    )).scalars().all()
+    # Map frontend role labels to DB role names
+    _ROLE_DISPLAY_MAP = {
+        "Owner": "Tenant Admin",
+        "Manager": "Manager",
+        "Staff": "Staff",
+        "Superadmin": "Super Admin",
+    }
+    db_role_filter = _ROLE_DISPLAY_MAP.get(role, role) if role else None
+
+    # If filtering by a specific DB role, join Role table in the query for efficiency
+    query = select(User).where(and_(*filters))
+    if db_role_filter:
+        query = query.join(Role, User.role_id == Role.id).where(Role.name == db_role_filter)
+
+    users = (await db.execute(query.offset(skip).limit(limit))).scalars().all()
+
+    # Reverse map: DB role name → display name
+    _DB_TO_DISPLAY = {v: k for k, v in _ROLE_DISPLAY_MAP.items()}
 
     result = []
     for u in users:
@@ -535,16 +550,15 @@ async def list_users(
             select(Role).where(Role.id == u.role_id)
         )).scalar_one_or_none()
         role_name = role_obj.name if role_obj else "Unknown"
+        display_role = _DB_TO_DISPLAY.get(role_name, role_name)
 
-        if role and role_name != role:
-            continue
 
         name = " ".join(filter(None, [u.first_name, u.last_name])) or u.email.split("@")[0]
         result.append({
             "id": str(u.id),
             "name": name,
             "email": u.email,
-            "role": role_name,
+            "role": display_role,
             "property": str(u.property_id) if u.property_id else "",
             "last_active": u.last_login.isoformat() if u.last_login else "",
             "status": "pending" if not u.is_verified else ("active" if u.is_active else "suspended"),
