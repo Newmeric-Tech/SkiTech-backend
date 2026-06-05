@@ -776,20 +776,34 @@ async def update_user_role(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ) -> Any:
+    from uuid import UUID as _UUID
     target = (await db.execute(
         select(User).where(User.id == user_id, User.deleted_at == None)
     )).scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Update role
     role_name = data.get("role", "")
-    role_obj = (await db.execute(select(Role).where(Role.name == role_name))).scalar_one_or_none()
-    if not role_obj:
-        raise HTTPException(status_code=400, detail=f"Role '{role_name}' not found")
+    if role_name:
+        role_obj = (await db.execute(select(Role).where(Role.name == role_name))).scalar_one_or_none()
+        if not role_obj:
+            raise HTTPException(status_code=400, detail=f"Role '{role_name}' not found")
+        target.role_id = role_obj.id
 
-    target.role_id = role_obj.id
+    # Update property_id (pass null/empty string to unlink)
+    if "property_id" in data:
+        pid = data["property_id"]
+        if pid:
+            try:
+                target.property_id = _UUID(str(pid))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid property_id")
+        else:
+            target.property_id = None
+
     await db.commit()
-    return {"success": True, "message": f"User role updated to {role_name}"}
+    return {"success": True}
 
 
 # ── Demo Requests ─────────────────────────────────────────────────────────────
