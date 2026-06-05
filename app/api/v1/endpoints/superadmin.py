@@ -534,8 +534,14 @@ async def list_users(
     }
     db_role_filter = _ROLE_DISPLAY_MAP.get(role, role) if role else None
 
+    # Always exclude Super Admins — this list is for tenant user management only
+    superadmin_role_ids = select(Role.id).where(Role.name == "Super Admin")
+
     # If filtering by a specific DB role, join Role table in the query for efficiency
-    query = select(User).where(and_(*filters))
+    query = (
+        select(User)
+        .where(and_(*filters), User.role_id.not_in(superadmin_role_ids))
+    )
     if db_role_filter:
         query = query.join(Role, User.role_id == Role.id).where(Role.name == db_role_filter)
 
