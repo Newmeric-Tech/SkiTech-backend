@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.models import (
-    AuditLog, DemoRequest, Employee, Property, Role, RolePermission, Tenant, User,
+    AuditLog, DemoRequest, Property, Role, RolePermission, Tenant, User,
     SubscriptionPlan, TenantSubscription,
 )
 
@@ -550,7 +550,7 @@ async def list_users(
     # Reverse map: DB role name → display name
     _DB_TO_DISPLAY = {v: k for k, v in _ROLE_DISPLAY_MAP.items()}
 
-    # Build property UUID → name map up front (one query, no N+1)
+    # Build property UUID → name map (one query, no N+1)
     property_ids = {u.property_id for u in users if u.property_id}
     property_name_map: dict = {}
     if property_ids:
@@ -558,37 +558,6 @@ async def list_users(
             select(Property.id, Property.name).where(Property.id.in_(property_ids))
         )).fetchall()
         property_name_map = {str(row.id): row.name for row in props}
-
-    # For users with no property_id on their User record, fall back to the employees table
-    # (covers users created before property_id was enforced on invite)
-    users_without_prop = [u for u in users if not u.property_id]
-    emp_prop_map: dict = {}
-    if users_without_prop:
-        emp_rows = (await db.execute(
-            select(Employee.user_id, Employee.property_id)
-            .where(
-                Employee.user_id.in_([u.id for u in users_without_prop]),
-                Employee.deleted_at == None,
-            )
-        )).fetchall()
-        emp_prop_map = {str(row.user_id): str(row.property_id) for row in emp_rows if row.property_id}
-
-        # Fetch names for any newly discovered property IDs
-        extra_ids = {v for v in emp_prop_map.values() if v not in property_name_map}
-        if extra_ids:
-            extra_props = (await db.execute(
-                select(Property.id, Property.name).where(Property.id.in_(extra_ids))
-            )).fetchall()
-            property_name_map.update({str(row.id): row.name for row in extra_props})
-
-    # Tenant name fallback — used when a user has no property linked at all
-    tenant_ids = {u.tenant_id for u in users if u.tenant_id}
-    tenant_name_map: dict = {}
-    if tenant_ids:
-        tenants = (await db.execute(
-            select(Tenant.id, Tenant.business_name).where(Tenant.id.in_(tenant_ids))
-        )).fetchall()
-        tenant_name_map = {str(row.id): row.business_name for row in tenants}
 
     # Build role id → display name map up front
     role_ids = {u.role_id for u in users}
@@ -601,12 +570,8 @@ async def list_users(
     for u in users:
         display_role = role_map.get(str(u.role_id), "Unknown")
         name = " ".join(filter(None, [u.first_name, u.last_name])) or u.email.split("@")[0]
-        prop_id_str = str(u.property_id) if u.property_id else emp_prop_map.get(str(u.id), "")
-        prop_name = (
-            property_name_map.get(prop_id_str, "")
-            if prop_id_str
-            else tenant_name_map.get(str(u.tenant_id), "")
-        )
+        prop_id_str = str(u.property_id) if u.property_id else ""
+        prop_name = property_name_map.get(prop_id_str, "") if prop_id_str else ""
         result.append({
             "id": str(u.id),
             "name": name,
