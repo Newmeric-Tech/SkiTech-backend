@@ -581,6 +581,15 @@ async def list_users(
             )).fetchall()
             property_name_map.update({str(row.id): row.name for row in extra_props})
 
+    # Tenant name fallback — used when a user has no property linked at all
+    tenant_ids = {u.tenant_id for u in users if u.tenant_id}
+    tenant_name_map: dict = {}
+    if tenant_ids:
+        tenants = (await db.execute(
+            select(Tenant.id, Tenant.business_name).where(Tenant.id.in_(tenant_ids))
+        )).fetchall()
+        tenant_name_map = {str(row.id): row.business_name for row in tenants}
+
     # Build role id → display name map up front
     role_ids = {u.role_id for u in users}
     roles_fetched = (await db.execute(
@@ -593,7 +602,11 @@ async def list_users(
         display_role = role_map.get(str(u.role_id), "Unknown")
         name = " ".join(filter(None, [u.first_name, u.last_name])) or u.email.split("@")[0]
         prop_id_str = str(u.property_id) if u.property_id else emp_prop_map.get(str(u.id), "")
-        prop_name = property_name_map.get(prop_id_str, "") if prop_id_str else ""
+        prop_name = (
+            property_name_map.get(prop_id_str, "")
+            if prop_id_str
+            else tenant_name_map.get(str(u.tenant_id), "")
+        )
         result.append({
             "id": str(u.id),
             "name": name,
