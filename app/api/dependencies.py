@@ -126,6 +126,20 @@ async def get_current_user_obj(
     return user
 
 
+def require_roles_strict(roles: list):
+    """Like require_roles but Co Admin is NOT auto-promoted to Tenant Admin.
+    Use this for billing/subscription endpoints that Co Admin must never access.
+    """
+    def checker(user: dict = Depends(get_current_user)) -> dict:
+        if user.get("role") not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: insufficient role",
+            )
+        return user
+    return checker
+
+
 def require_feature(feature_name: str):
     """Route dependency: enforce that tenant's active plan includes a feature. Super Admin bypasses."""
     async def checker(

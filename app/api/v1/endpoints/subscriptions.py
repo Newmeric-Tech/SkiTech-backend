@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user, require_roles
+from app.api.dependencies import get_current_user, require_roles, require_roles_strict
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import SubscriptionPlan, Tenant, TenantSubscription
@@ -177,7 +177,7 @@ async def get_my_plan(
 async def select_plan(
     data: SelectPlanRequest,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
+    user: dict = Depends(require_roles_strict(["Super Admin", "Tenant Admin"])),
 ):
     """Free plan switch (downgrade or free-to-free). Paid upgrades go through Stripe checkout."""
     tenant_id = UUID(user["tenant_id"])
@@ -248,7 +248,7 @@ async def assign_plan(
 async def create_checkout_session(
     data: CheckoutSessionRequest,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
+    user: dict = Depends(require_roles_strict(["Super Admin", "Tenant Admin"])),
 ):
     """Create a Stripe Checkout Session for upgrading to a paid plan."""
     if not settings.STRIPE_SECRET_KEY:
@@ -318,7 +318,7 @@ async def create_checkout_session(
 async def verify_checkout_session(
     data: dict,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
+    user: dict = Depends(require_roles_strict(["Super Admin", "Tenant Admin"])),
 ):
     """
     Called by frontend immediately after Stripe redirects back on success.
@@ -400,7 +400,7 @@ async def verify_checkout_session(
 @router.post("/create-portal-session")
 async def create_portal_session(
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
+    user: dict = Depends(require_roles_strict(["Super Admin", "Tenant Admin"])),
 ):
     """Create a Stripe Customer Portal session to manage/cancel subscription."""
     if not settings.STRIPE_SECRET_KEY:
