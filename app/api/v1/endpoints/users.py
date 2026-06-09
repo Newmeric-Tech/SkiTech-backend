@@ -158,6 +158,10 @@ async def list_users(
     current_user: dict = Depends(require_roles(["Super Admin", "Tenant Admin", "Manager"])),
 ):
     """List users in the tenant. Optionally filter by property or role."""
+    # Co Admin is always scoped to their assigned property
+    if current_user.get("role") == "Co Admin" and current_user.get("property_id"):
+        property_id = UUID(current_user["property_id"])
+
     q = (
         select(User)
         .join(Role, User.role_id == Role.id)

@@ -36,6 +36,9 @@ async def dashboard_summary(
     user: dict = Depends(get_current_user),
 ):
     tid = UUID(user["tenant_id"])
+    # Co Admin is always scoped to their assigned property
+    if user.get("role") == "Co Admin" and user.get("property_id"):
+        property_id = user["property_id"]
 
     base = [SOPItem.tenant_id == tid, SOPItem.deleted_at == None]
     if property_id:
@@ -68,6 +71,8 @@ async def tasks_trend(
     user: dict = Depends(get_current_user),
 ):
     tid = UUID(user["tenant_id"])
+    if user.get("role") == "Co Admin" and user.get("property_id"):
+        property_id = user["property_id"]
     trend = []
     for i, day in enumerate(_get_week_days()):
         day_start = datetime.combine(day, datetime.min.time())
@@ -98,6 +103,8 @@ async def alerts(
     user: dict = Depends(get_current_user),
 ):
     tid = UUID(user["tenant_id"])
+    if user.get("role") == "Co Admin" and user.get("property_id"):
+        property_id = user["property_id"]
 
     filters = [
         LowStockAlert.tenant_id == tid,

@@ -56,9 +56,14 @@ def require_permission(permission: str):
 
 
 def require_roles(roles: list):
-    """Route dependency: allow only specific roles."""
+    """Route dependency: allow only specific roles.
+    Co Admin is automatically permitted wherever Tenant Admin is permitted.
+    """
     def checker(user: dict = Depends(get_current_user)) -> dict:
-        if user.get("role") not in roles:
+        actual_role = user.get("role")
+        # Co Admin inherits Tenant Admin access on all shared endpoints
+        effective_role = "Tenant Admin" if actual_role == "Co Admin" else actual_role
+        if effective_role not in roles and actual_role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access forbidden: insufficient role",

@@ -32,10 +32,14 @@ async def owner_stats(
     """
     Owner dashboard stats.
     Optional property_id filter — if not given, aggregates across all properties.
+    Co Admin is always scoped to their assigned property.
     """
     tenant_id_str = user.get("tenant_id") or ""
     if not tenant_id_str:
         raise HTTPException(status_code=400, detail="No tenant assigned to this account")
+    # Co Admin always scoped to their property
+    if user.get("role") == "Co Admin" and user.get("property_id"):
+        property_id = UUID(user["property_id"])
     return await get_owner_stats(
         db=db,
         tenant_id=UUID(tenant_id_str),

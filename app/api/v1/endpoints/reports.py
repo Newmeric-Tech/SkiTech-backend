@@ -127,14 +127,16 @@ async def get_revenue_report(
             y -= 1
         buckets.append((y, m))
 
-    # Fetch active properties for this tenant
-    prop_result = await db.execute(
-        select(Property).where(
-            Property.tenant_id == tenant_id,
-            Property.deleted_at == None,
-            Property.is_active == True,
-        )
+    # Fetch active properties — Co Admin is scoped to their assigned property
+    prop_q = select(Property).where(
+        Property.tenant_id == tenant_id,
+        Property.deleted_at == None,
+        Property.is_active == True,
     )
+    if user.get("role") == "Co Admin" and user.get("property_id"):
+        prop_q = prop_q.where(Property.id == UUID(user["property_id"]))
+
+    prop_result = await db.execute(prop_q)
     properties = prop_result.scalars().all()
     prop_map = {str(p.id): p.name for p in properties}
 
