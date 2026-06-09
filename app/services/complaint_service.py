@@ -68,8 +68,9 @@ class ComplaintService:
             status="open"
         )
         self.db.add(complaint)
-        await self.db.flush()
-        
+        await self.db.commit()
+        await self.db.refresh(complaint)
+
         return ComplaintResponse.from_orm(complaint)
 
     async def get_complaint(self, complaint_id: UUID) -> Optional[ComplaintDetailResponse]:
@@ -119,7 +120,8 @@ class ComplaintService:
         if data.location:
             complaint.location = data.location
         
-        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(complaint)
         return ComplaintResponse.from_orm(complaint)
 
     async def resolve_complaint(
@@ -134,8 +136,9 @@ class ComplaintService:
         complaint.resolution_notes = data.resolution_notes
         complaint.resolved_by = self.user_id
         complaint.resolved_at = datetime.utcnow()
-        
-        await self.db.flush()
+
+        await self.db.commit()
+        await self.db.refresh(complaint)
         return ComplaintResponse.from_orm(complaint)
 
     async def escalate_complaint(self, complaint_id: UUID, reason: str) -> ComplaintResponse:
@@ -156,7 +159,8 @@ class ComplaintService:
             )
         )
         
-        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(complaint)
         return ComplaintResponse.from_orm(complaint)
 
     # ===========================================================
@@ -285,9 +289,10 @@ class ComplaintService:
         complaint.assigned_by = self.user_id
         complaint.assigned_at = datetime.utcnow()
         complaint.status = "in_progress"
-        
-        await self.db.flush()
-        
+
+        await self.db.commit()
+        await self.db.refresh(complaint)
+
         # Add activity comment
         await self.add_comment(
             complaint_id,
@@ -331,8 +336,9 @@ class ComplaintService:
         
         # Increment comment count
         complaint.comment_count = (complaint.comment_count or 0) + 1
-        
-        await self.db.flush()
+
+        await self.db.commit()
+        await self.db.refresh(comment)
         return ComplaintCommentResponse.from_orm(comment)
 
     async def get_comments(self, complaint_id: UUID) -> List[ComplaintCommentResponse]:
