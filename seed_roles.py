@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 DEFAULT_ROLES = [
     {"name": "Super Admin", "role_level": 0, "description": "System administrator with full access"},
     {"name": "Tenant Admin", "role_level": 1, "description": "Tenant administrator"},
+    {"name": "Co Admin", "role_level": 1, "description": "Property-scoped partner co-administrator"},
     {"name": "Manager", "role_level": 2, "description": "Property/Department manager"},
     {"name": "Staff", "role_level": 3, "description": "Regular staff member"},
 ]

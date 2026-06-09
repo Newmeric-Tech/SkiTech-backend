@@ -262,6 +262,46 @@ async def get_health(
     }
 
 
+# ── Tenants ───────────────────────────────────────────────────────────────────
+
+@router.get("/tenants")
+async def list_tenants(
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_superadmin),
+) -> Any:
+    """Return all tenants — used by the invite modal to populate the tenant selector for Co Admin."""
+    query = select(Tenant).where(Tenant.is_active == True)
+    if search:
+        query = query.where(Tenant.business_name.ilike(f"%{search}%"))
+    tenants = (await db.execute(query.order_by(Tenant.business_name))).scalars().all()
+    return [
+        {
+            "id": str(t.id),
+            "name": t.business_name,
+            "owner_name": t.owner_name,
+            "contact_email": t.contact_email,
+        }
+        for t in tenants
+    ]
+
+
+@router.get("/tenants/{tenant_id}/properties")
+async def list_tenant_properties(
+    tenant_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_superadmin),
+) -> Any:
+    """Return all properties for a specific tenant — used to filter the property dropdown per tenant."""
+    props = (await db.execute(
+        select(Property).where(
+            Property.tenant_id == UUID(tenant_id),
+            Property.deleted_at == None,
+        ).order_by(Property.name)
+    )).scalars().all()
+    return [{"id": str(p.id), "name": p.name} for p in props]
+
+
 # ── Properties ────────────────────────────────────────────────────────────────
 
 @router.get("/properties")
@@ -528,6 +568,7 @@ async def list_users(
     # Map frontend role labels to DB role names
     _ROLE_DISPLAY_MAP = {
         "Owner": "Tenant Admin",
+        "Co Admin": "Co Admin",
         "Manager": "Manager",
         "Staff": "Staff",
         "Superadmin": "Super Admin",
@@ -609,6 +650,7 @@ async def invite_user(
 
     _ROLE_MAP = {
         "Owner": "Tenant Admin", "owner": "Tenant Admin",
+        "Co Admin": "Co Admin", "co admin": "Co Admin",
         "Manager": "Manager", "manager": "Manager",
         "Staff": "Staff", "staff": "Staff",
         "Superadmin": "Super Admin", "superadmin": "Super Admin",
@@ -630,6 +672,7 @@ async def invite_user(
     temp_password = secrets.token_urlsafe(16)
 
     # Owners always get their own isolated tenant.
+    # Co Admin uses an existing tenant (property-scoped partner).
     # For Manager/Staff, tenant_id must be supplied explicitly.
     if role_name == "Tenant Admin":
         business_name = data.get("business_name") or f"{full_name}'s Business"
@@ -650,15 +693,15 @@ async def invite_user(
         if not tenant_id:
             raise HTTPException(
                 status_code=400,
-                detail="tenant_id is required when inviting a Manager or Staff member.",
+                detail="tenant_id is required when inviting a Manager, Staff, or Co Admin member.",
             )
 
-    # Managers and Staff must be linked to a specific property
+    # Manager, Staff, and Co Admin must all be linked to a specific property
     property_id = data.get("property_id") or None
-    if role_name in ("Manager", "Staff") and not property_id:
+    if role_name in ("Manager", "Staff", "Co Admin") and not property_id:
         raise HTTPException(
             status_code=400,
-            detail="property_id is required when inviting a Manager or Staff member.",
+            detail="property_id is required when inviting a Manager, Staff, or Co Admin member.",
         )
 
     new_user = User(

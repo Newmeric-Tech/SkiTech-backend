@@ -1137,3 +1137,26 @@ class DocumentTemplate(Base, UUIDMixin):
     updated_at       = Column(DateTime, nullable=True)
     deleted_at       = Column(DateTime, nullable=True)
     is_system_action = Column(Boolean, default=False)
+
+
+# ===========================================================
+# CO-ADMIN REQUESTS
+# ===========================================================
+
+class CoAdminRequest(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "co_admin_requests"
+
+    requesting_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id          = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    property_id        = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    proposed_email     = Column(String(255), nullable=False)
+    proposed_name      = Column(String(255), nullable=False)
+    status             = Column(String(20), nullable=False, default="pending", index=True)
+    # pending / approved / rejected
+    superadmin_note    = Column(Text, nullable=True)
+    invited_user_id    = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    requester    = relationship("User", foreign_keys=[requesting_user_id])
+    invited_user = relationship("User", foreign_keys=[invited_user_id])
+    tenant       = relationship("Tenant")
+    property     = relationship("Property")

@@ -81,6 +81,15 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "view_inventory",
         "view_department",
     ],
+    "Co Admin": [
+        "manage_property", "view_property",
+        "manage_staff",
+        "view_sop", "create_sop", "update_sop", "delete_sop",
+        "view_inventory", "manage_inventory",
+        "view_vendor", "create_vendor", "update_vendor", "delete_vendor",
+        "view_owner",
+        "view_department", "create_department", "update_department", "delete_department",
+    ],
 }
 
 
