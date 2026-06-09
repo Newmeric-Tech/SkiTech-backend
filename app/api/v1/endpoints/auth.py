@@ -38,11 +38,13 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 ROLE_NAME_MAP = {
     "owner": "Tenant Admin",
+    "co-admin": "Co Admin",
     "manager": "Manager",
     "staff": "Staff",
     "superadmin": "Super Admin",
     # Also support direct DB names in case they're sent directly
     "Tenant Admin": "Tenant Admin",
+    "Co Admin": "Co Admin",
     "Manager": "Manager",
     "Staff": "Staff",
     "Super Admin": "Super Admin",

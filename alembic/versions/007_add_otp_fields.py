@@ -15,8 +15,14 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("users", sa.Column("otp_code", sa.String(6), nullable=True))
-    op.add_column("users", sa.Column("otp_expires_at", sa.DateTime(), nullable=True))
+    conn = op.get_bind()
+    existing = {row[0] for row in conn.execute(sa.text(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='users'"
+    ))}
+    if "otp_code" not in existing:
+        op.add_column("users", sa.Column("otp_code", sa.String(6), nullable=True))
+    if "otp_expires_at" not in existing:
+        op.add_column("users", sa.Column("otp_expires_at", sa.DateTime(), nullable=True))
 
 
 def downgrade():

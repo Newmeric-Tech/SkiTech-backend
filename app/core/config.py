@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # Email / OTP
     SENDGRID_API_KEY: str = ""
     SMTP_EMAIL: str = ""
+    SMTP_PASSWORD: str = ""
 
     # AWS S3 — shared credentials used by all S3 buckets
     AWS_ACCESS_KEY_ID: Optional[str] = None
