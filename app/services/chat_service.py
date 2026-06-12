@@ -223,7 +223,7 @@ class ConversationService:
 
         # Create new conversation
         conversation = await self.conv_repo.create(
-            conversation_type=ConversationType.DIRECT.value,
+            conversation_type=ConversationType.DIRECT,
             tenant_id=tenant_id,
             property_id=property_id,
             created_by=user_id,
@@ -328,7 +328,7 @@ class ConversationService:
             raise AccessDenied("Conversation not found or access denied")
 
         # Only admins/group owners can update
-        if conversation.type == ConversationType.GROUP.value:
+        if conversation.type == ConversationType.GROUP:
             participant = await self.participant_repo.get_participant(
                 conversation_id=conversation_id,
                 user_id=user_id
@@ -417,7 +417,7 @@ class ParticipantService:
         if not conversation:
             raise AccessDenied("Conversation not found or access denied")
 
-        if conversation.type != ConversationType.GROUP.value:
+        if conversation.type != ConversationType.GROUP:
             raise ValidationError("Can only add participants to group conversations")
 
         # Only admins can add
