@@ -78,7 +78,7 @@ class Conversation(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     property_id: UUID = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Conversation metadata
-    type: str = Column(SQLEnum(ConversationType, name="conversationtype", create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=False, default=ConversationType.DIRECT)
+    type: str = Column(Text, nullable=False, default=ConversationType.DIRECT.value)
     name: str = Column(String(255), nullable=True)  # Only used for group chats
     description: Optional[str] = Column(Text, nullable=True)
     
@@ -144,7 +144,7 @@ class ConversationParticipant(Base, UUIDMixin, TimestampMixin):
     
     # Role in group conversations
     role: str = Column(
-        SQLEnum(ParticipantRole, name="participantrole", create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=False, default=ParticipantRole.MEMBER
+        Text, nullable=False, default=ParticipantRole.MEMBER.value
     )
     
     # Read receipts
@@ -340,7 +340,7 @@ class MessageDeliveryStatus(Base, UUIDMixin, TimestampMixin):
     
     # Status progression: SENT -> DELIVERED -> READ
     status: str = Column(
-        SQLEnum(MessageStatus, name="messagestatus", create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=False, default=MessageStatus.SENT
+        Text, nullable=False, default=MessageStatus.SENT.value
     )
     
     # Timestamp when status changed
