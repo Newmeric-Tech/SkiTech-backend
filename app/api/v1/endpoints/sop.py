@@ -94,36 +94,50 @@ async def create_sop(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("create_sop")),
 ):
-    sop = SOPItem(
-        tenant_id=UUID(user["tenant_id"]),
-        property_id=property_id,
-        **data.model_dump(),
-    )
-    db.add(sop)
-    await db.flush()
-
-    # Determine which user to assign the execution to
-    assign_user_id = None
-    if sop.assigned_user_id:
-        assign_user_id = sop.assigned_user_id
-    elif sop.assigned_employee_id:
-        employee = await db.get(Employee, sop.assigned_employee_id)
-        if employee and employee.user_id:
-            assign_user_id = employee.user_id
-
-    if assign_user_id:
-        execution = SOPExecution(
-            sop_id=sop.id,
-            user_id=assign_user_id,
-            property_id=sop.property_id,
-            tenant_id=sop.tenant_id,
-            status="pending",
+    try:
+        sop = SOPItem(
+            tenant_id=UUID(user["tenant_id"]),
+            property_id=property_id,
+            category_id=data.category_id,
+            title=data.title,
+            description=data.description,
+            assigned_employee_id=data.assigned_employee_id,
+            assigned_user_id=data.assigned_user_id,
+            department_id=data.department_id,
+            priority=data.priority.value if hasattr(data.priority, "value") else data.priority,
+            status=data.status.value if hasattr(data.status, "value") else data.status,
+            due_date=data.due_date,
         )
-        db.add(execution)
+        db.add(sop)
+        await db.flush()
 
-    await db.commit()
-    await db.refresh(sop)
-    return sop
+        # Determine which user to assign the execution to
+        assign_user_id = None
+        if sop.assigned_user_id:
+            assign_user_id = sop.assigned_user_id
+        elif sop.assigned_employee_id:
+            employee = await db.get(Employee, sop.assigned_employee_id)
+            if employee and employee.user_id:
+                assign_user_id = employee.user_id
+
+        if assign_user_id:
+            execution = SOPExecution(
+                sop_id=sop.id,
+                user_id=assign_user_id,
+                property_id=sop.property_id,
+                tenant_id=sop.tenant_id,
+                status="pending",
+            )
+            db.add(execution)
+
+        await db.commit()
+        await db.refresh(sop)
+        return sop
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/items/{property_id}", response_model=List[SOPResponse])

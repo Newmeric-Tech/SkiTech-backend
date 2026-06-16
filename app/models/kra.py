@@ -2,12 +2,14 @@
 KRA (Key Result Areas) Models
 
 Tracks daily, weekly, monthly, and quarterly performance metrics.
-Uses integer PKs (IdMixin) separate from the UUID-based core models.
+Uses integer PKs (IdMixin) with UUID tenant_id/user_id to match the core User/Tenant models.
 """
 
+import uuid
 from typing import Optional
 
 from sqlalchemy import Boolean, Date, Float, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, IdMixin, SoftDeleteMixin, TimestampMixin
@@ -16,8 +18,8 @@ from .base import Base, IdMixin, SoftDeleteMixin, TimestampMixin
 class DailyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "daily_kras"
 
-    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     date: Mapped[Date] = mapped_column(Date, nullable=False, index=True)
 
     shift_changeover_status: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -35,8 +37,8 @@ class DailyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
 class WeeklyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "weekly_kras"
 
-    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     week_starting_date: Mapped[Date] = mapped_column(Date, nullable=False, index=True)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     week_number: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -52,8 +54,8 @@ class WeeklyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
 class MonthlyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "monthly_kras"
 
-    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
@@ -68,8 +70,8 @@ class MonthlyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
 class QuarterlyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "quarterly_kras"
 
-    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     quarter: Mapped[int] = mapped_column(Integer, nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 

@@ -21,6 +21,8 @@ from app.models.ranking_models import (
     RankingCriteriaConfig, EmployeeRankingScore, EmployeeRanking,
     RankingAuditLog, RankingInsight,
 )
+from app.models.kra import DailyKRA, WeeklyKRA, MonthlyKRA, QuarterlyKRA
+from app.models.workforce_entry import WorkforceEntry
 
 __all__ = [
     "Base",
@@ -36,4 +38,6 @@ __all__ = [
     "MessageDeliveryStatus", "TypingIndicator", "ChatNotification",
     "RankingCriteriaConfig", "EmployeeRankingScore", "EmployeeRanking",
     "RankingAuditLog", "RankingInsight",
+    "DailyKRA", "WeeklyKRA", "MonthlyKRA", "QuarterlyKRA",
+    "WorkforceEntry",
 ]

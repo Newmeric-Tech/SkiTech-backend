@@ -29,7 +29,7 @@ class DailyKRAService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_daily_kra(self, tenant_id: int, user_id: int, kra_data: DailyKRACreate) -> DailyKRA:
+    async def create_daily_kra(self, tenant_id, user_id, kra_data: DailyKRACreate) -> DailyKRA:
         db_kra = DailyKRA(
             tenant_id=tenant_id,
             user_id=user_id,
@@ -167,7 +167,7 @@ class WeeklyKRAService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_weekly_kra(self, tenant_id: int, user_id: int, kra_data: WeeklyKRACreate) -> WeeklyKRA:
+    async def create_weekly_kra(self, tenant_id, user_id, kra_data: WeeklyKRACreate) -> WeeklyKRA:
         db_kra = WeeklyKRA(
             tenant_id=tenant_id, user_id=user_id,
             week_starting_date=kra_data.week_starting_date, year=kra_data.year,
@@ -232,9 +232,12 @@ class MonthlyKRAService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_monthly_kra(self, tenant_id: int, user_id: int, kra_data: MonthlyKRACreate) -> MonthlyKRA:
+    async def create_monthly_kra(self, tenant_id, user_id, kra_data: MonthlyKRACreate) -> MonthlyKRA:
         db_kra = MonthlyKRA(
             tenant_id=tenant_id, user_id=user_id, month=kra_data.month, year=kra_data.year,
+            revenue_amount=kra_data.revenue_amount,
+            guest_count=kra_data.guest_count,
+            occupancy_rate=kra_data.occupancy_rate,
             revenue_report_url=kra_data.revenue_report_url, notes=kra_data.notes, is_submitted=True,
         )
         self.db.add(db_kra)
@@ -293,9 +296,12 @@ class QuarterlyKRAService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_quarterly_kra(self, tenant_id: int, user_id: int, kra_data: QuarterlyKRACreate) -> QuarterlyKRA:
+    async def create_quarterly_kra(self, tenant_id, user_id, kra_data: QuarterlyKRACreate) -> QuarterlyKRA:
         db_kra = QuarterlyKRA(
             tenant_id=tenant_id, user_id=user_id, quarter=kra_data.quarter, year=kra_data.year,
+            revenue_amount=kra_data.revenue_amount,
+            guest_count=kra_data.guest_count,
+            occupancy_rate=kra_data.occupancy_rate,
             revenue_report_url=kra_data.revenue_report_url, notes=kra_data.notes, is_submitted=True,
         )
         self.db.add(db_kra)

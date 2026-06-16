@@ -49,8 +49,8 @@ class DailyKRAUpdate(BaseModel):
 
 class DailyKRAResponse(DailyKRABase):
     id: int
-    tenant_id: int
-    user_id: int
+    tenant_id: str
+    user_id: str
     date: dt_date
     is_submitted: bool
     created_at: datetime
@@ -62,8 +62,8 @@ class DailyKRAResponse(DailyKRABase):
 
 class DailyKRAListResponse(BaseModel):
     id: int
-    tenant_id: int
-    user_id: int
+    tenant_id: str
+    user_id: str
     date: dt_date
     is_submitted: bool
     guest_checkin_count: int
@@ -111,8 +111,8 @@ class WeeklyKRAUpdate(BaseModel):
 
 class WeeklyKRAResponse(WeeklyKRABase):
     id: int
-    tenant_id: int
-    user_id: int
+    tenant_id: str
+    user_id: str
     week_starting_date: dt_date
     year: int
     week_number: int
@@ -126,8 +126,8 @@ class WeeklyKRAResponse(WeeklyKRABase):
 
 class WeeklyKRAListResponse(BaseModel):
     id: int
-    tenant_id: int
-    user_id: int
+    tenant_id: str
+    user_id: str
     week_starting_date: dt_date
     week_number: int
     year: int
@@ -172,8 +172,8 @@ class MonthlyKRAUpdate(BaseModel):
 
 class MonthlyKRAResponse(MonthlyKRABase):
     id: int
-    tenant_id: int
-    user_id: int
+    tenant_id: str
+    user_id: str
     month: int
     year: int
     is_submitted: bool
@@ -186,8 +186,8 @@ class MonthlyKRAResponse(MonthlyKRABase):
 
 class MonthlyKRAListResponse(BaseModel):
     id: int
-    tenant_id: int
-    user_id: int
+    tenant_id: str
+    user_id: str
     month: int
     year: int
     is_submitted: bool
@@ -234,8 +234,8 @@ class QuarterlyKRAUpdate(BaseModel):
 
 class QuarterlyKRAResponse(QuarterlyKRABase):
     id: int
-    tenant_id: int
-    user_id: int
+    tenant_id: str
+    user_id: str
     quarter: int
     year: int
     is_submitted: bool
@@ -248,8 +248,8 @@ class QuarterlyKRAResponse(QuarterlyKRABase):
 
 class QuarterlyKRAListResponse(BaseModel):
     id: int
-    tenant_id: int
-    user_id: int
+    tenant_id: str
+    user_id: str
     quarter: int
     year: int
     is_submitted: bool
@@ -264,7 +264,7 @@ class QuarterlyKRAListResponse(BaseModel):
 # ==================== KRA ANALYTICS SCHEMAS ====================
 
 class KRAComplianceResponse(BaseModel):
-    tenant_id: int
+    tenant_id: str
     employee_id: Optional[int] = None
     property_id: Optional[int] = None
     start_date: dt_date

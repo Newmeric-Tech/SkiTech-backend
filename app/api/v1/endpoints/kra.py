@@ -6,6 +6,7 @@ Endpoints for daily, weekly, monthly, and quarterly KRA tracking.
 
 from datetime import date as dt_date
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,8 +32,8 @@ router = APIRouter(prefix="/kra", tags=["KRA"])
 async def get_current_user_context(user: dict = Depends(get_current_user)):
     """Extract user context from JWT for KRA endpoints."""
     return {
-        "tenant_id": user["tenant_id"],
-        "user_id": user["user_id"],
+        "tenant_id": UUID(user["tenant_id"]),
+        "user_id": UUID(user["user_id"]),
         "role": user.get("role", "staff"),
     }
 
