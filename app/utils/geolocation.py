@@ -45,18 +45,22 @@ def is_within_geofence(
 
 
 def validate_coordinates(
-    latitude: float, longitude: float, accuracy: Optional[float] = None, max_accuracy: float = 100.0
+    latitude: float, longitude: float, accuracy: Optional[float] = None
 ) -> Tuple[bool, Optional[str]]:
     if not (-90 <= latitude <= 90):
         return False, "Latitude must be between -90 and 90"
     if not (-180 <= longitude <= 180):
         return False, "Longitude must be between -180 and 180"
-    if accuracy is not None:
-        if accuracy < 0:
-            return False, "Accuracy cannot be negative"
-        if accuracy > max_accuracy:
-            return False, f"GPS accuracy {accuracy}m exceeds maximum {max_accuracy}m"
+    if accuracy is not None and accuracy < 0:
+        return False, "Accuracy cannot be negative"
     return True, None
+
+
+def get_accuracy_warning(accuracy: Optional[float], max_accuracy: float = 100.0) -> Optional[str]:
+    """Poor GPS accuracy shouldn't block a punch — just flag it for review."""
+    if accuracy is not None and accuracy > max_accuracy:
+        return f"Low GPS accuracy ({accuracy:.0f}m) — your location may be imprecise."
+    return None
 
 
 def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

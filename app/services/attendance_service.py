@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import AttendanceRecord, PropertyGeofence
 from app.schemas.attendance import PunchInRequest, PunchOutRequest, PropertyGeofenceCreate
-from app.utils.geolocation import is_within_geofence, validate_coordinates
+from app.utils.geolocation import is_within_geofence, validate_coordinates, get_accuracy_warning
 
 
 class AttendanceService:
@@ -43,7 +43,7 @@ class AttendanceService:
 
         is_within = False
         distance = None
-        warning = None
+        warnings = []
 
         if geofence:
             is_within, distance, _ = is_within_geofence(
@@ -52,7 +52,12 @@ class AttendanceService:
                 geofence.center_lat, geofence.center_lng, geofence.radius_meters,
             )
             if not is_within:
-                warning = f"Punch in outside geofence. Distance: {distance:.2f}m from property center."
+                warnings.append(f"Punch in outside geofence. Distance: {distance:.2f}m from property center.")
+
+        accuracy_warning = get_accuracy_warning(punch_in_request.geolocation.accuracy)
+        if accuracy_warning:
+            warnings.append(accuracy_warning)
+        warning = " ".join(warnings) or None
 
         attendance = AttendanceRecord(
             user_id=user_id, property_id=property_id, tenant_id=tenant_id,
@@ -110,7 +115,7 @@ class AttendanceService:
 
         is_within = False
         distance = None
-        warning = None
+        warnings = []
 
         if geofence:
             is_within, distance, _ = is_within_geofence(
@@ -119,7 +124,12 @@ class AttendanceService:
                 geofence.center_lat, geofence.center_lng, geofence.radius_meters,
             )
             if not is_within:
-                warning = f"Punch out outside geofence. Distance: {distance:.2f}m from property center."
+                warnings.append(f"Punch out outside geofence. Distance: {distance:.2f}m from property center.")
+
+        accuracy_warning = get_accuracy_warning(punch_out_request.geolocation.accuracy)
+        if accuracy_warning:
+            warnings.append(accuracy_warning)
+        warning = " ".join(warnings) or None
 
         attendance.punch_out_time = datetime.now(timezone.utc)
         attendance.punch_out_lat = punch_out_request.geolocation.latitude
