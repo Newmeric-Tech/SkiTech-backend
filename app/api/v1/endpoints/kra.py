@@ -107,7 +107,7 @@ async def create_daily_kra(
 
 
 @router.get("/daily/{kra_id}", response_model=DailyKRAResponse)
-async def get_daily_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
+async def get_daily_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_session),
                          user_context: dict = Depends(get_current_user_context)):
     kra = await DailyKRAService(db).get_daily_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
@@ -116,7 +116,7 @@ async def get_daily_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
 
 
 @router.put("/daily/{kra_id}", response_model=DailyKRAResponse)
-async def update_daily_kra(kra_id: int, update_data: DailyKRAUpdate,
+async def update_daily_kra(kra_id: UUID, update_data: DailyKRAUpdate,
                             db: AsyncSession = Depends(get_db_session),
                             user_context: dict = Depends(get_current_user_context)):
     service = DailyKRAService(db)
@@ -130,7 +130,7 @@ async def update_daily_kra(kra_id: int, update_data: DailyKRAUpdate,
 
 
 @router.delete("/daily/{kra_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_daily_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
+async def delete_daily_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_session),
                             user_context: dict = Depends(get_current_user_context)):
     service = DailyKRAService(db)
     kra = await service.get_daily_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
@@ -179,7 +179,7 @@ async def create_weekly_kra(kra_data: WeeklyKRACreate, db: AsyncSession = Depend
 
 
 @router.get("/weekly/{kra_id}", response_model=WeeklyKRAResponse)
-async def get_weekly_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
+async def get_weekly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_session),
                           user_context: dict = Depends(get_current_user_context)):
     kra = await WeeklyKRAService(db).get_weekly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
@@ -188,7 +188,7 @@ async def get_weekly_kra(kra_id: int, db: AsyncSession = Depends(get_db_session)
 
 
 @router.put("/weekly/{kra_id}", response_model=WeeklyKRAResponse)
-async def update_weekly_kra(kra_id: int, update_data: WeeklyKRAUpdate,
+async def update_weekly_kra(kra_id: UUID, update_data: WeeklyKRAUpdate,
                              db: AsyncSession = Depends(get_db_session),
                              user_context: dict = Depends(get_current_user_context)):
     service = WeeklyKRAService(db)
@@ -202,7 +202,7 @@ async def update_weekly_kra(kra_id: int, update_data: WeeklyKRAUpdate,
 
 
 @router.delete("/weekly/{kra_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_weekly_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
+async def delete_weekly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_session),
                              user_context: dict = Depends(get_current_user_context)):
     service = WeeklyKRAService(db)
     kra = await service.get_weekly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
@@ -251,7 +251,7 @@ async def create_monthly_kra(kra_data: MonthlyKRACreate, db: AsyncSession = Depe
 
 
 @router.get("/monthly/{kra_id}", response_model=MonthlyKRAResponse)
-async def get_monthly_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
+async def get_monthly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_session),
                            user_context: dict = Depends(get_current_user_context)):
     kra = await MonthlyKRAService(db).get_monthly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
@@ -260,7 +260,7 @@ async def get_monthly_kra(kra_id: int, db: AsyncSession = Depends(get_db_session
 
 
 @router.put("/monthly/{kra_id}", response_model=MonthlyKRAResponse)
-async def update_monthly_kra(kra_id: int, update_data: MonthlyKRAUpdate,
+async def update_monthly_kra(kra_id: UUID, update_data: MonthlyKRAUpdate,
                               db: AsyncSession = Depends(get_db_session),
                               user_context: dict = Depends(get_current_user_context)):
     service = MonthlyKRAService(db)
@@ -274,7 +274,7 @@ async def update_monthly_kra(kra_id: int, update_data: MonthlyKRAUpdate,
 
 
 @router.delete("/monthly/{kra_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_monthly_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
+async def delete_monthly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_session),
                               user_context: dict = Depends(get_current_user_context)):
     service = MonthlyKRAService(db)
     kra = await service.get_monthly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
@@ -323,7 +323,7 @@ async def create_quarterly_kra(kra_data: QuarterlyKRACreate, db: AsyncSession = 
 
 
 @router.get("/quarterly/{kra_id}", response_model=QuarterlyKRAResponse)
-async def get_quarterly_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
+async def get_quarterly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_session),
                              user_context: dict = Depends(get_current_user_context)):
     kra = await QuarterlyKRAService(db).get_quarterly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
@@ -332,7 +332,7 @@ async def get_quarterly_kra(kra_id: int, db: AsyncSession = Depends(get_db_sessi
 
 
 @router.put("/quarterly/{kra_id}", response_model=QuarterlyKRAResponse)
-async def update_quarterly_kra(kra_id: int, update_data: QuarterlyKRAUpdate,
+async def update_quarterly_kra(kra_id: UUID, update_data: QuarterlyKRAUpdate,
                                 db: AsyncSession = Depends(get_db_session),
                                 user_context: dict = Depends(get_current_user_context)):
     service = QuarterlyKRAService(db)
@@ -346,7 +346,7 @@ async def update_quarterly_kra(kra_id: int, update_data: QuarterlyKRAUpdate,
 
 
 @router.delete("/quarterly/{kra_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_quarterly_kra(kra_id: int, db: AsyncSession = Depends(get_db_session),
+async def delete_quarterly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_session),
                                 user_context: dict = Depends(get_current_user_context)):
     service = QuarterlyKRAService(db)
     kra = await service.get_quarterly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])

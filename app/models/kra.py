@@ -2,7 +2,9 @@
 KRA (Key Result Areas) Models
 
 Tracks daily, weekly, monthly, and quarterly performance metrics.
-Uses integer PKs (IdMixin) with UUID tenant_id/user_id to match the core User/Tenant models.
+Uses UUID PKs (UUIDMixin) to match the live database schema (these tables
+predate the Alembic migration that documents them and were never created
+with integer ids, despite an earlier version of this file assuming so).
 """
 
 import uuid
@@ -12,10 +14,10 @@ from sqlalchemy import Boolean, Date, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, IdMixin, SoftDeleteMixin, TimestampMixin
+from .base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 
-class DailyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
+class DailyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "daily_kras"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
@@ -34,7 +36,7 @@ class DailyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     is_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
 
-class WeeklyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
+class WeeklyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "weekly_kras"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
@@ -51,7 +53,7 @@ class WeeklyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     is_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
 
-class MonthlyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
+class MonthlyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "monthly_kras"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
@@ -67,7 +69,7 @@ class MonthlyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
     is_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
 
-class QuarterlyKRA(Base, IdMixin, TimestampMixin, SoftDeleteMixin):
+class QuarterlyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "quarterly_kras"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)

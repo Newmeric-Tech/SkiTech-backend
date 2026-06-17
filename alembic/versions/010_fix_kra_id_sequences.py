@@ -1,9 +1,12 @@
-"""Fix missing auto-increment sequence on KRA table id columns
+"""Fix weekly_kras.ota_images_uploaded column type (jsonb -> boolean)
 
-The id columns on daily_kras/weekly_kras/monthly_kras/quarterly_kras were
-created without a backing sequence/default, so INSERTs that don't supply
-an id fail with a NotNullViolationError. This attaches a proper serial
-sequence to each, seeded past any existing rows.
+The live database has this column as jsonb while the model has always
+expected a boolean, causing asyncpg type errors on Weekly KRA submission.
+
+Note: the KRA tables' id columns are UUID (not integer) in the live
+database — this predates the migration that documents these tables, so
+no migration is needed for that; app/models/kra.py was updated to use
+UUIDMixin to match reality instead.
 
 Revision ID: 010_fix_kra_id_sequences
 Revises: 009_add_kra_tables
@@ -11,30 +14,34 @@ Create Date: 2026-06-17
 
 """
 from alembic import op
+from sqlalchemy import text
 
 revision = "010_fix_kra_id_sequences"
 down_revision = "009_add_kra_tables"
 branch_labels = None
 depends_on = None
 
-KRA_TABLES = ["daily_kras", "weekly_kras", "monthly_kras", "quarterly_kras"]
-
 
 def upgrade() -> None:
     conn = op.get_bind()
-    for table in KRA_TABLES:
-        if not conn.dialect.has_table(conn, table):
-            continue
-        seq_name = f"{table}_id_seq"
-        op.execute(f"CREATE SEQUENCE IF NOT EXISTS {seq_name}")
-        op.execute(f"ALTER SEQUENCE {seq_name} OWNED BY {table}.id")
-        op.execute(
-            f"SELECT setval('{seq_name}', COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, false)"
+    if not conn.dialect.has_table(conn, "weekly_kras"):
+        return
+
+    col_type = conn.execute(
+        text(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_name = 'weekly_kras' AND column_name = 'ota_images_uploaded'"
         )
-        op.execute(f"ALTER TABLE {table} ALTER COLUMN id SET DEFAULT nextval('{seq_name}')")
+    ).scalar()
+
+    if col_type == "jsonb":
+        op.execute(
+            "ALTER TABLE weekly_kras "
+            "ALTER COLUMN ota_images_uploaded TYPE boolean "
+            "USING COALESCE((ota_images_uploaded #>> '{}')::boolean, false)"
+        )
+        op.execute("ALTER TABLE weekly_kras ALTER COLUMN ota_images_uploaded SET DEFAULT false")
 
 
 def downgrade() -> None:
-    for table in KRA_TABLES:
-        op.execute(f"ALTER TABLE {table} ALTER COLUMN id DROP DEFAULT")
-        op.execute(f"DROP SEQUENCE IF EXISTS {table}_id_seq")
+    op.execute("ALTER TABLE weekly_kras ALTER COLUMN ota_images_uploaded TYPE jsonb USING to_jsonb(ota_images_uploaded)")

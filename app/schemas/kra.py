@@ -49,7 +49,7 @@ class DailyKRAUpdate(BaseModel):
 
 
 class DailyKRAResponse(DailyKRABase):
-    id: int
+    id: UUID
     tenant_id: UUID
     user_id: UUID
     date: dt_date
@@ -62,7 +62,7 @@ class DailyKRAResponse(DailyKRABase):
 
 
 class DailyKRAListResponse(BaseModel):
-    id: int
+    id: UUID
     tenant_id: UUID
     user_id: UUID
     date: dt_date
@@ -111,7 +111,7 @@ class WeeklyKRAUpdate(BaseModel):
 
 
 class WeeklyKRAResponse(WeeklyKRABase):
-    id: int
+    id: UUID
     tenant_id: UUID
     user_id: UUID
     week_starting_date: dt_date
@@ -126,7 +126,7 @@ class WeeklyKRAResponse(WeeklyKRABase):
 
 
 class WeeklyKRAListResponse(BaseModel):
-    id: int
+    id: UUID
     tenant_id: UUID
     user_id: UUID
     week_starting_date: dt_date
@@ -172,7 +172,7 @@ class MonthlyKRAUpdate(BaseModel):
 
 
 class MonthlyKRAResponse(MonthlyKRABase):
-    id: int
+    id: UUID
     tenant_id: UUID
     user_id: UUID
     month: int
@@ -186,7 +186,7 @@ class MonthlyKRAResponse(MonthlyKRABase):
 
 
 class MonthlyKRAListResponse(BaseModel):
-    id: int
+    id: UUID
     tenant_id: UUID
     user_id: UUID
     month: int
@@ -234,7 +234,7 @@ class QuarterlyKRAUpdate(BaseModel):
 
 
 class QuarterlyKRAResponse(QuarterlyKRABase):
-    id: int
+    id: UUID
     tenant_id: UUID
     user_id: UUID
     quarter: int
@@ -248,7 +248,7 @@ class QuarterlyKRAResponse(QuarterlyKRABase):
 
 
 class QuarterlyKRAListResponse(BaseModel):
-    id: int
+    id: UUID
     tenant_id: UUID
     user_id: UUID
     quarter: int
