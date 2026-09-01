@@ -23,6 +23,7 @@ from app.models.ranking_models import (
 )
 from app.models.kra import DailyKRA, WeeklyKRA, MonthlyKRA, QuarterlyKRA
 from app.models.workforce_entry import WorkforceEntry
+from app.models.channel_manager import Integration, SyncLog, Reservation
 
 __all__ = [
     "Base",
@@ -40,4 +41,5 @@ __all__ = [
     "RankingAuditLog", "RankingInsight",
     "DailyKRA", "WeeklyKRA", "MonthlyKRA", "QuarterlyKRA",
     "WorkforceEntry",
+    "Integration", "SyncLog", "Reservation",
 ]

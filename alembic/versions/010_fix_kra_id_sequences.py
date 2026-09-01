@@ -38,7 +38,13 @@ def upgrade() -> None:
         op.execute(
             "ALTER TABLE weekly_kras "
             "ALTER COLUMN ota_images_uploaded TYPE boolean "
-            "USING COALESCE((ota_images_uploaded #>> '{}')::boolean, false)"
+            "USING CASE "
+            "WHEN ota_images_uploaded IS NULL "
+            "  OR ota_images_uploaded = 'null'::jsonb "
+            "  OR ota_images_uploaded = '{}'::jsonb THEN false "
+            "WHEN jsonb_typeof(ota_images_uploaded) = 'boolean' "
+            "  THEN (ota_images_uploaded #>> '{}')::boolean "
+            "ELSE true END"
         )
         op.execute("ALTER TABLE weekly_kras ALTER COLUMN ota_images_uploaded SET DEFAULT false")
 

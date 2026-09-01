@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
 
+    # Channel Manager — encrypts stored provider credentials (Channex/Mews/Cloudbeds/etc.)
+    CREDENTIALS_ENCRYPTION_KEY: str = ""
+
     # Logging
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: Optional[str] = None
