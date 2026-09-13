@@ -84,13 +84,12 @@ app.add_middleware(TenantIsolationMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(LoggingMiddleware)
 
-# ── CORS — allow all origins ──────────────────────────────
-# Wildcard origin requires allow_credentials=False.
+# ── CORS — restricted to known frontend origins ───────────
 # Auth is handled via JWT in the Authorization header (not cookies),
 # so credentials=False is correct and safe.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
