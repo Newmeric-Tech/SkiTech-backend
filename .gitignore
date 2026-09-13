@@ -32,6 +32,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Teammate reference material - not part of the deployed backend
+_teammate_extras/
+
 # Environment
 .env
 .env.local
