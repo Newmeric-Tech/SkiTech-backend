@@ -8,7 +8,7 @@ from app.utils.crypto import decrypt
 
 router = APIRouter()
 
-@router.post("/webhooks/little-hotelier")
+@router.post("/little-hotelier")
 async def little_hotelier_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),

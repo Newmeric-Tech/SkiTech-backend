@@ -40,7 +40,6 @@ class Settings(BaseSettings):
         "http://localhost:8080",
         "http://localhost:5173",
     ]
-    ALLOWED_CREDENTIALS: bool = True
     ALLOWED_METHODS: List[str] = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
     ALLOWED_HEADERS: List[str] = ["*"]
 

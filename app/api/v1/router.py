@@ -8,11 +8,10 @@ from app.api.dependencies import require_feature
 from app.api.v1.endpoints import (
     auth, governance, inventory,
     properties, sop, workforce, users, stats, reports, rooms,
-    kra, attendance, department, employee, vendor, owner, superadmin, dashboard,
+    kra, attendance, owner, superadmin, dashboard,
     subscriptions, chat, scheduling, complaints, documents, activity_log, ranking,
     co_admin, integrations, webhooks,
 )
-from app.api.v1 import vendor_owner_department_routes
 
 router = APIRouter(prefix="/v1")
 
@@ -26,15 +25,10 @@ router.include_router(rooms.router)
 router.include_router(properties.router)
 router.include_router(subscriptions.router)
 
-# Workforce (existing combined)
+# Workforce
 router.include_router(workforce.dept_router)
 router.include_router(workforce.emp_router)
 router.include_router(workforce.vendor_router)
-
-# Workforce (new separate endpoints from teammate)
-router.include_router(department.router)
-router.include_router(employee.router)
-router.include_router(vendor.router)
 router.include_router(owner.router)
 
 # Operations — inventory is feature-gated by subscription plan
@@ -48,7 +42,6 @@ router.include_router(governance.router)
 # New modules from teammate
 router.include_router(kra.router)
 router.include_router(attendance.router)
-router.include_router(vendor_owner_department_routes.router)
 
 # Employee Scheduling
 router.include_router(scheduling.router)
