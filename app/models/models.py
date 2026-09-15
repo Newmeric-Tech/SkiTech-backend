@@ -147,6 +147,7 @@ class User(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 
     is_active = Column(Boolean, nullable=False, default=True)
     is_verified = Column(Boolean, nullable=False, default=False)
+    is_demo = Column(Boolean, nullable=False, default=False)
     last_login = Column(DateTime)
     otp_code = Column(String(6), nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)

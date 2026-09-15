@@ -43,7 +43,7 @@ async def get_overview(
 
     active_users = (await db.execute(
         select(func.count()).select_from(User).where(
-            User.is_active == True, User.deleted_at == None
+            User.is_active == True, User.deleted_at == None, User.is_demo == False
         )
     )).scalar() or 0
 
@@ -104,7 +104,9 @@ async def get_analytics(
     user: dict = Depends(require_superadmin),
 ) -> Any:
     total_users = (await db.execute(
-        select(func.count()).select_from(User).where(User.deleted_at == None)
+        select(func.count()).select_from(User).where(
+            User.deleted_at == None, User.is_demo == False
+        )
     )).scalar() or 0
 
     total_props = (await db.execute(
@@ -548,9 +550,9 @@ async def list_users(
     user: dict = Depends(require_superadmin),
 ) -> Any:
     if status == "pending":
-        filters = [User.deleted_at == None, User.is_verified == False]
+        filters = [User.deleted_at == None, User.is_verified == False, User.is_demo == False]
     else:
-        filters = [User.deleted_at == None, User.is_verified == True]
+        filters = [User.deleted_at == None, User.is_verified == True, User.is_demo == False]
         if status == "suspended":
             filters.append(User.is_active == False)
         elif status == "active":
