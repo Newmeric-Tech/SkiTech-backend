@@ -24,6 +24,7 @@ from app.models.ranking_models import (
 from app.models.kra import DailyKRA, WeeklyKRA, MonthlyKRA, QuarterlyKRA
 from app.models.workforce_entry import WorkforceEntry
 from app.models.channel_manager import Integration, SyncLog, Reservation
+from app.models.inbox import InboxItem
 
 __all__ = [
     "Base",
@@ -42,4 +43,5 @@ __all__ = [
     "DailyKRA", "WeeklyKRA", "MonthlyKRA", "QuarterlyKRA",
     "WorkforceEntry",
     "Integration", "SyncLog", "Reservation",
+    "InboxItem",
 ]

@@ -18,6 +18,7 @@ from app.schemas.schemas import (
     AdjustStockRequest, InventoryCreate, InventoryResponse,
     InventoryUpdate, StockAdjustRequest,
 )
+from app.services.inbox_service import create_inbox_item
 
 router = APIRouter(prefix="/inventory", tags=["Inventory"])
 
@@ -139,6 +140,23 @@ async def _record_movement(
             threshold_qty=item.reorder_level,
         )
         db.add(alert)
+
+        # source_record_id is the InventoryItem, not the LowStockAlert — the
+        # frontend links/highlights the item on the Inventory page, and
+        # LowStockAlert.is_resolved is never set anywhere in this codebase,
+        # so there's no source-side "resolved" event to hook for this type.
+        # The inbox item can only be cleared manually (PUT /inbox/{id}/dismiss).
+        await create_inbox_item(
+            db,
+            tenant_id=item.tenant_id,
+            property_id=item.property_id,
+            source_module="inventory",
+            item_type="low_stock",
+            source_record_id=item.id,
+            recipient_role="manager",
+            title=f"Low stock: {item.item_name}",
+            body=f"{item.quantity} {item.unit or ''} remaining (reorder at {item.reorder_level}).".strip(),
+        )
 
 
 @router.post("/item/{item_id}/add-stock", response_model=InventoryResponse)

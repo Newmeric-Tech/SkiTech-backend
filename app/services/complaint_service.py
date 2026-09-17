@@ -28,6 +28,7 @@ from app.models.models import (
     Complaint, ComplaintAssignment, ComplaintComment, ComplaintAttachment,
     ComplaintCommentAttachment, Department, Employee, Property, User,
 )
+from app.services.inbox_service import create_inbox_item, mark_inbox_items_actioned
 from app.schemas.complaints import (
     ComplaintAssignmentCreate, ComplaintCategory, ComplaintCommentCreate,
     ComplaintCommentResponse, ComplaintCreate, ComplaintDetailResponse,
@@ -186,6 +187,13 @@ class ComplaintService:
         complaint.resolved_by = self.user_id
         complaint.resolved_at = datetime.utcnow()
 
+        await mark_inbox_items_actioned(
+            self.db,
+            tenant_id=self.tenant_id,
+            source_record_id=complaint.id,
+            item_type="complaint_escalated",
+        )
+
         await self.db.commit()
         await self.db.refresh(complaint)
         return ComplaintResponse.from_orm(complaint)
@@ -215,6 +223,18 @@ class ComplaintService:
                 comment=f"Escalated by {self.user_role}: {reason}",
                 is_internal=True,
             ),
+        )
+
+        await create_inbox_item(
+            self.db,
+            tenant_id=self.tenant_id,
+            property_id=complaint.property_id,
+            source_module="complaints",
+            item_type="complaint_escalated",
+            source_record_id=complaint.id,
+            recipient_role="manager",
+            title=f"Complaint escalated: {complaint.title}",
+            body=reason,
         )
 
         await self.db.commit()

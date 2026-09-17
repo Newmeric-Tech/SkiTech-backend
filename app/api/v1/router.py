@@ -10,7 +10,7 @@ from app.api.v1.endpoints import (
     properties, sop, workforce, users, stats, reports, rooms,
     kra, attendance, owner, superadmin, dashboard,
     subscriptions, chat, scheduling, complaints, documents, activity_log, ranking,
-    co_admin, integrations, webhooks,
+    co_admin, integrations, webhooks, inbox,
 )
 
 router = APIRouter(prefix="/v1")
@@ -48,6 +48,9 @@ router.include_router(scheduling.router)
 
 # Error & Complaint Log
 router.include_router(complaints.router)
+
+# Inbox — cross-module "needs your attention" feed
+router.include_router(inbox.router)
 
 # Document Management System
 router.include_router(documents.router)
