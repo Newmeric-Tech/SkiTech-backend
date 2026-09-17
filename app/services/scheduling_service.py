@@ -127,6 +127,22 @@ class SchedulingService:
         await self.db.flush()
         return schedules
 
+    async def list_weekly_schedules(self, week_start: datetime, week_end: datetime) -> List[WeeklySchedule]:
+        """List all weekly schedules (with shift assignments) for the property/tenant
+        within the given week range. Same scoping as the dashboard's sched_conditions."""
+        conditions = [
+            WeeklySchedule.tenant_id == self.tenant_id,
+            WeeklySchedule.week_start_date >= week_start,
+            WeeklySchedule.week_end_date <= week_end,
+        ]
+        if self.property_id is not None:
+            conditions.append(WeeklySchedule.property_id == self.property_id)
+        stmt = select(WeeklySchedule).where(and_(*conditions)).options(
+            selectinload(WeeklySchedule.shift_assignments)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
     async def get_weekly_schedule(self, schedule_id: UUID) -> Optional[WeeklySchedule]:
         """Get weekly schedule with shift assignments"""
         stmt = select(WeeklySchedule).where(
@@ -262,6 +278,21 @@ class SchedulingService:
         self.db.add(request)
         await self.db.flush()
         return request
+
+    async def list_replacement_requests(self, status: Optional[str] = None) -> List[ReplacementRequest]:
+        """List replacement requests for the property/tenant, optionally filtered
+        by status (e.g. "rejected"). Same scoping as get_manager_dashboard_data's
+        repl_conditions — not week-scoped, matches existing pending/accepted behavior."""
+        conditions = [ReplacementRequest.tenant_id == self.tenant_id]
+        if self.property_id is not None:
+            conditions.append(ReplacementRequest.property_id == self.property_id)
+        if status:
+            conditions.append(ReplacementRequest.status == status)
+        stmt = select(ReplacementRequest).where(and_(*conditions)).order_by(
+            ReplacementRequest.created_at.desc()
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
     async def get_replacement_request(self, request_id: UUID) -> Optional[ReplacementRequest]:
         """Get replacement request with related data"""

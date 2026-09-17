@@ -146,6 +146,23 @@ async def bulk_create_schedules(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/schedules", response_model=list[WeeklyScheduleResponse])
+async def list_schedules(
+    week_start: Optional[datetime] = None,
+    week_end: Optional[datetime] = None,
+    service: SchedulingService = Depends(get_scheduling_service),
+):
+    """List weekly schedules (with shift assignments) for the property, defaults
+    to the current week. Powers the manager schedule grid."""
+    from datetime import timedelta
+    if week_start is None:
+        today = datetime.utcnow()
+        week_start = today - timedelta(days=today.weekday())
+    if week_end is None:
+        week_end = week_start + timedelta(days=6)
+    return await service.list_weekly_schedules(week_start, week_end)
+
+
 @router.get("/schedules/{schedule_id}", response_model=WeeklyScheduleResponse)
 async def get_schedule(
     schedule_id: str,
@@ -243,6 +260,16 @@ async def create_replacement_request(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/replacement-requests", response_model=list[ReplacementRequestResponse])
+async def list_replacement_requests(
+    status: Optional[str] = None,
+    service: SchedulingService = Depends(get_scheduling_service),
+):
+    """List replacement requests for the property, optionally filtered by status
+    (pending/accepted/rejected/assigned/cancelled). Powers response tracking."""
+    return await service.list_replacement_requests(status)
 
 
 @router.get("/replacement-requests/{request_id}", response_model=ReplacementRequestResponse)
