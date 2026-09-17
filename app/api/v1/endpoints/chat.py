@@ -412,7 +412,7 @@ async def get_conversation(
 async def update_conversation(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     request: UpdateConversationRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
@@ -449,7 +449,7 @@ async def update_conversation(
 async def archive_conversation(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -479,7 +479,7 @@ async def archive_conversation(
 async def mute_conversation(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     request: MuteConversationRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
@@ -515,7 +515,7 @@ async def mute_conversation(
 async def send_message(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     request: MessageCreateRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
@@ -567,7 +567,7 @@ async def send_message(
 async def send_message_with_media(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     file: UploadFile = File(...),
     content: str = Form(""),
     authorization: str = Header(...),
@@ -668,7 +668,7 @@ async def send_message_with_media(
 async def get_messages(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     authorization: str = Header(...),
@@ -706,7 +706,7 @@ async def get_messages(
 async def edit_message(
     message_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     conversation_id: UUID = Query(...),
     request: MessageEditRequest = Body(...),
     authorization: str = Header(...),
@@ -741,7 +741,7 @@ async def edit_message(
 async def delete_message(
     message_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     conversation_id: UUID = Query(...),
     hard_delete: bool = Query(False),
     authorization: str = Header(...),
@@ -804,7 +804,7 @@ async def search_messages(
     conversation_id: UUID,
     query: str = Query(..., min_length=1),
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     authorization: str = Header(...),
@@ -847,7 +847,7 @@ async def search_messages(
 async def add_participant(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     request: AddParticipantRequest = Body(...),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
@@ -883,7 +883,7 @@ async def remove_participant(
     conversation_id: UUID,
     user_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     authorization: str = Header(...),
     session: AsyncSession = Depends(get_async_session)
 ):
@@ -921,7 +921,7 @@ async def remove_participant(
 async def upload_media(
     conversation_id: UUID,
     tenant_id: UUID = Query(...),
-    property_id: UUID = Query(...),
+    property_id: Optional[UUID] = Query(None),
     message_id: UUID = Query(...),
     file: UploadFile = File(...),
     authorization: str = Header(...),
