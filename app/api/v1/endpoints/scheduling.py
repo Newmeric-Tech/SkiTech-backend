@@ -7,11 +7,12 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, get_current_user_obj
 from app.core.database import get_db
-from app.models.models import User
+from app.models.models import Employee, User
 from app.schemas.scheduling import (
     EmployeeAvailabilityCreate, EmployeeAvailabilityResponse,
     WeeklyScheduleCreate, WeeklyScheduleResponse, WeeklyScheduleUpdate,
@@ -386,15 +387,31 @@ async def get_staff_dashboard(
 @router.get("/me", response_model=StaffDashboardData)
 async def get_my_schedule(
     service: SchedulingService = Depends(get_scheduling_service),
-    current_user: User = Depends(get_current_user_obj)
+    current_user: User = Depends(get_current_user_obj),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get the current user's own scheduling dashboard.
     Returns pending replacement requests where the user is involved,
     plus their current week schedule.
+
+    get_staff_dashboard_data() queries by employees.id, which is a
+    different primary key from users.id (Employee.user_id is a separate
+    nullable FK) — resolve the caller's own Employee record first rather
+    than passing current_user.id directly.
     """
+    result = await db.execute(
+        select(Employee).where(
+            Employee.user_id == current_user.id,
+            Employee.tenant_id == current_user.tenant_id,
+        )
+    )
+    employee = result.scalar_one_or_none()
+    if not employee:
+        raise HTTPException(status_code=404, detail="No employee record linked to this user")
+
     try:
-        data = await service.get_staff_dashboard_data(current_user.id)
+        data = await service.get_staff_dashboard_data(employee.id)
         return data
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -494,6 +494,7 @@ class SchedulingService:
         # Get pending shift requests
         stmt = select(ReplacementRequest).where(
             and_(
+                ReplacementRequest.tenant_id == self.tenant_id,
                 ReplacementRequest.original_employee_id == employee_id,
                 ReplacementRequest.status == "pending"
             )
@@ -502,14 +503,15 @@ class SchedulingService:
         )
         result = await self.db.execute(stmt)
         pending_requests = result.scalars().all()
-        
+
         # Get current week schedule
         today = datetime.utcnow()
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
-        
+
         stmt = select(WeeklySchedule).where(
             and_(
+                WeeklySchedule.tenant_id == self.tenant_id,
                 WeeklySchedule.employee_id == employee_id,
                 WeeklySchedule.week_start_date >= week_start,
                 WeeklySchedule.week_end_date <= week_end
@@ -519,10 +521,13 @@ class SchedulingService:
         )
         result = await self.db.execute(stmt)
         current_schedule = result.scalars().first()
-        
+
         # Count responses
         stmt = select(ReplacementRequest).where(
-            ReplacementRequest.original_employee_id == employee_id
+            and_(
+                ReplacementRequest.tenant_id == self.tenant_id,
+                ReplacementRequest.original_employee_id == employee_id,
+            )
         )
         result = await self.db.execute(stmt)
         all_requests = result.scalars().all()
