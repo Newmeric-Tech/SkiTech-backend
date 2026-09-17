@@ -188,6 +188,11 @@ async def select_plan(
     plan = plan_result.scalar_one_or_none()
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
+    if plan.price > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="This plan requires payment — use /subscriptions/create-checkout-session instead",
+        )
 
     existing = await db.execute(
         select(TenantSubscription).where(
