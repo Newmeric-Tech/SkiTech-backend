@@ -76,6 +76,7 @@ class SchedulingService:
         """Get employee availability for specific date"""
         stmt = select(EmployeeAvailability).where(
             and_(
+                EmployeeAvailability.tenant_id == self.tenant_id,
                 EmployeeAvailability.employee_id == employee_id,
                 EmployeeAvailability.availability_date == date
             )
@@ -129,7 +130,8 @@ class SchedulingService:
     async def get_weekly_schedule(self, schedule_id: UUID) -> Optional[WeeklySchedule]:
         """Get weekly schedule with shift assignments"""
         stmt = select(WeeklySchedule).where(
-            WeeklySchedule.id == schedule_id
+            WeeklySchedule.id == schedule_id,
+            WeeklySchedule.tenant_id == self.tenant_id,
         ).options(
             selectinload(WeeklySchedule.shift_assignments)
         )
@@ -169,7 +171,10 @@ class SchedulingService:
 
     async def get_shift_assignment(self, shift_id: UUID) -> Optional[ShiftAssignment]:
         """Get shift assignment"""
-        stmt = select(ShiftAssignment).where(ShiftAssignment.id == shift_id)
+        stmt = select(ShiftAssignment).where(
+            ShiftAssignment.id == shift_id,
+            ShiftAssignment.tenant_id == self.tenant_id,
+        )
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
@@ -261,7 +266,8 @@ class SchedulingService:
     async def get_replacement_request(self, request_id: UUID) -> Optional[ReplacementRequest]:
         """Get replacement request with related data"""
         stmt = select(ReplacementRequest).where(
-            ReplacementRequest.id == request_id
+            ReplacementRequest.id == request_id,
+            ReplacementRequest.tenant_id == self.tenant_id,
         ).options(
             selectinload(ReplacementRequest.original_employee),
             selectinload(ReplacementRequest.replacement_employee),
@@ -441,6 +447,7 @@ class SchedulingService:
 
         # Get scheduled employees for week
         sched_conditions = [
+            WeeklySchedule.tenant_id == self.tenant_id,
             WeeklySchedule.week_start_date >= week_start,
             WeeklySchedule.week_end_date <= week_end,
             WeeklySchedule.status.in_(["assigned", "published"]),
@@ -460,7 +467,10 @@ class SchedulingService:
             critical_actions.extend(conflicts.conflicts)
 
         # Get pending replacements
-        repl_conditions = [ReplacementRequest.status.in_(["pending", "accepted"])]
+        repl_conditions = [
+            ReplacementRequest.tenant_id == self.tenant_id,
+            ReplacementRequest.status.in_(["pending", "accepted"]),
+        ]
         if self.property_id is not None:
             repl_conditions.append(ReplacementRequest.property_id == self.property_id)
         stmt = select(ReplacementRequest).where(and_(*repl_conditions))
