@@ -9,7 +9,7 @@ from app.api.v1.endpoints import (
     auth, governance, inventory,
     properties, sop, workforce, users, stats, reports, rooms,
     kra, attendance, owner, superadmin, dashboard,
-    subscriptions, chat, scheduling, complaints, documents, activity_log, ranking,
+    subscriptions, scheduling, complaints, documents, activity_log, ranking,
     co_admin, integrations, webhooks, inbox,
 )
 
@@ -67,9 +67,6 @@ router.include_router(superadmin.router)
 # Co Admin request flow
 router.include_router(co_admin.owner_router)
 router.include_router(co_admin.admin_router)
-
-# Chat & Messaging
-router.include_router(chat.router)
 
 # Channel Manager integrations and provider webhooks
 router.include_router(integrations.router, prefix="/channel-manager", tags=["Channel Manager"])

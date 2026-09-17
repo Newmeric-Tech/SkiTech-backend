@@ -56,7 +56,6 @@ class Settings(BaseSettings):
     # S3 bucket names (create these in the AWS console)
     S3_PROPERTY_IMAGES_BUCKET: str = "skitech-property-images"  # public-read
     S3_SOP_BUCKET: str = "skitech-sop-documents"                # private
-    S3_CHAT_BUCKET: str = "skitech-chat-files"                   # private
 
     BACKEND_URL: str = "http://localhost:8000"
     FRONTEND_URL: str = "https://skitech-iota.vercel.app"

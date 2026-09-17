@@ -48,6 +48,6 @@ class DatabaseError(SkiTechException):
 NotFoundException = NotFoundError
 ValidationException = ValidationError
 
-# Aliases used by chat module
+# Aliases used by ranking_service.py
 AccessDenied = ForbiddenError
 NotFound = NotFoundError

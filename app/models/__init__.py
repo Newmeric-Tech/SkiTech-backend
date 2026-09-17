@@ -13,10 +13,6 @@ from app.models.models import (
     GovernanceWorkflow, WorkflowInstance,
     AuditLog,
 )
-from app.models.chat_models import (
-    Conversation, ConversationParticipant, Message, MessageMedia,
-    MessageDeliveryStatus, TypingIndicator, ChatNotification,
-)
 from app.models.ranking_models import (
     RankingCriteriaConfig, EmployeeRankingScore, EmployeeRanking,
     RankingAuditLog, RankingInsight,
@@ -36,8 +32,6 @@ __all__ = [
     "Room", "Booking", "RestaurantTable", "Order", "OrderItem",
     "GovernanceWorkflow", "WorkflowInstance",
     "AuditLog",
-    "Conversation", "ConversationParticipant", "Message", "MessageMedia",
-    "MessageDeliveryStatus", "TypingIndicator", "ChatNotification",
     "RankingCriteriaConfig", "EmployeeRankingScore", "EmployeeRanking",
     "RankingAuditLog", "RankingInsight",
     "DailyKRA", "WeeklyKRA", "MonthlyKRA", "QuarterlyKRA",
