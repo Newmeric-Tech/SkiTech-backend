@@ -12,6 +12,15 @@ downgrade() (same drop order); downgrade() mirrors 001's upgrade() (same
 create order, minus the "already exists" branch that only applied to the
 very first deployment).
 
+Also drops message_status — a table discovered only when the first real
+run of this migration failed with DependentObjectsStillExist: it has FKs
+into messages and users but was never defined in chat_models.py or any
+tracked migration (raw-SQL schema drift, same pattern already seen
+elsewhere in this project — see memory note on drift). Confirmed via live
+introspection before adding it here: composite PK (message_id, user_id),
+both FKs ON DELETE CASCADE, status VARCHAR(10), updated_at default now(),
+0 rows.
+
 Revision ID: 015_drop_chat_tables
 Revises: 014_add_inbox_items
 Create Date: 2026-09-18
@@ -32,6 +41,7 @@ def upgrade() -> None:
     op.drop_table("typing_indicators")
     op.drop_table("message_delivery_status")
     op.drop_table("message_media")
+    op.drop_table("message_status")
     op.drop_table("conversation_participants")
     op.drop_table("messages")
     op.drop_table("conversations")
@@ -96,6 +106,18 @@ def downgrade() -> None:
     op.create_index("idx_messages_created_at", "messages", ["created_at"])
     op.create_index("idx_messages_reply_to_id", "messages", ["reply_to_id"])
     op.create_index("idx_messages_deleted_at", "messages", ["deleted_at"])
+
+    # Undocumented table recovered by live introspection — see module docstring.
+    op.create_table(
+        "message_status",
+        sa.Column("message_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("status", sa.String(10), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["message_id"], ["messages.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("message_id", "user_id"),
+    )
 
     op.create_table(
         "conversation_participants",
