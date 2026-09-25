@@ -10,7 +10,7 @@ with integer ids, despite an earlier version of this file assuming so).
 import uuid
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, Float, Integer, String, Text
+from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,7 +20,9 @@ from .base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 class DailyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "daily_kras"
 
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     date: Mapped[Date] = mapped_column(Date, nullable=False, index=True)
 
@@ -39,7 +41,9 @@ class DailyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 class WeeklyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "weekly_kras"
 
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     week_starting_date: Mapped[Date] = mapped_column(Date, nullable=False, index=True)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -56,7 +60,9 @@ class WeeklyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 class MonthlyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "monthly_kras"
 
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
@@ -72,7 +78,9 @@ class MonthlyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 class QuarterlyKRA(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "quarterly_kras"
 
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     quarter: Mapped[int] = mapped_column(Integer, nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)

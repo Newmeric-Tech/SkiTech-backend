@@ -54,6 +54,7 @@ class AttendanceRecord(Base, UUIDMixin, TimestampMixin):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class PropertyGeofence(Base, UUIDMixin, TimestampMixin):

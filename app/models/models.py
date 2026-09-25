@@ -98,6 +98,7 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     subscription_status = Column(String(50), nullable=False, default="active")
     is_active = Column(Boolean, nullable=False, default=True)
     stripe_customer_id = Column(String(100), nullable=True)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         CheckConstraint("business_type IN ('hotel','restaurant','other')", name="check_business_type"),
@@ -180,6 +181,7 @@ class Property(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     has_restaurant = Column(Boolean, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
     image_urls = Column(JSONB, nullable=True, default=list)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_tenant_property_name"),
@@ -239,8 +241,12 @@ class Employee(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     is_active = Column(Boolean, nullable=False, default=True)
     start_date = Column(DateTime)
     end_date = Column(DateTime)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
+        # Live DB enforces this uniqueness but it was never declared here —
+        # found by the schema-drift audit.
+        UniqueConstraint("tenant_id", "employee_code", name="uq_employee_code"),
         Index("idx_employees_tenant_id", "tenant_id"),
         Index("idx_employees_property_id", "property_id"),
     )
@@ -268,6 +274,7 @@ class Department(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     name = Column(String(255), nullable=False)
     description = Column(Text)
     is_active = Column(Boolean, default=True)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("idx_departments_tenant_id", "tenant_id"),
@@ -295,6 +302,7 @@ class Vendor(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     email = Column(String(255))
     address = Column(Text)
     is_active = Column(Boolean, default=True)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("idx_vendors_tenant_id", "tenant_id"),
@@ -311,14 +319,15 @@ class Vendor(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 class InventoryItem(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "inventory_items"
 
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
-    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False)
     department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
 
     item_name = Column(String(255), nullable=False)
     quantity = Column(Integer, nullable=False, default=0)
     unit = Column(String(50))
     reorder_level = Column(Integer)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("idx_inventory_items_property_id", "property_id"),
@@ -347,6 +356,7 @@ class InventoryMovement(Base, UUIDMixin, TimestampMixin):
     performed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
     department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         CheckConstraint("movement_type IN ('IN','OUT','ADJUST')", name="check_movement_type"),
@@ -367,6 +377,7 @@ class LowStockAlert(Base, UUIDMixin):
     triggered_at = Column(TIMESTAMP, server_default=func.now())
     is_resolved = Column(Boolean, default=False)
     resolved_at = Column(TIMESTAMP)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     inventory_item = relationship("InventoryItem")
 
@@ -378,13 +389,20 @@ class LowStockAlert(Base, UUIDMixin):
 class SOPCategory(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "sop_categories"
 
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
-    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False)
 
     name = Column(String(255), nullable=False)
     description = Column(Text)
+    # Live DB enforces this default (true) but the column was never
+    # declared here — found by the schema-drift audit.
+    is_active = Column(Boolean, nullable=True, default=True)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
+        # Live DB enforces this uniqueness but it was never declared here —
+        # found by the schema-drift audit.
+        UniqueConstraint("tenant_id", "property_id", "name", name="uq_sop_category"),
         Index("idx_sop_category_tenant", "tenant_id"),
         Index("idx_sop_category_property", "property_id"),
     )
@@ -395,18 +413,23 @@ class SOPCategory(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 class SOPItem(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "sop_items"
 
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
-    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False)
-    category_id = Column(UUID(as_uuid=True), ForeignKey("sop_categories.id"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=False)
+    category_id = Column(UUID(as_uuid=True), ForeignKey("sop_categories.id", ondelete="CASCADE"), nullable=False)
     department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
-    assigned_employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id"), nullable=True)
+    assigned_employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
     assigned_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Live DB enforces this FK (ON DELETE SET NULL) but the column was never
+    # declared here — found by the schema-drift audit. Added to document
+    # reality, not to wire up any new behavior in application code.
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     title = Column(String(255), nullable=False)
     description = Column(Text)
     priority = Column(String(50), nullable=False, default="medium")  # low / medium / high
     status = Column(String(50), nullable=False, default="pending")   # pending / in_progress / completed
     due_date = Column(DateTime)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         CheckConstraint("priority IN ('low','medium','high')", name="check_sop_priority"),
@@ -443,6 +466,7 @@ class SOPExecution(Base, UUIDMixin, TimestampMixin):
     proof_location_lng = Column(Float, nullable=True)
     proof_location_name = Column(String(255), nullable=True)
     rejection_reason = Column(Text, nullable=True)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("idx_sop_exec_user", "user_id"),
@@ -502,6 +526,7 @@ class Room(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     room_type = Column(String(100))
     price_per_night = Column(DECIMAL(10, 2))
     status = Column(String(50), nullable=False, default="available")
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         UniqueConstraint("property_id", "room_number", name="uq_room_number"),
@@ -551,6 +576,24 @@ class Booking(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         nullable=False,
         default="booked"
     )
+
+    # The 10 columns below plus is_demo were live on this table but never
+    # declared here — found by the schema-drift audit. All undocumented,
+    # unreferenced anywhere in this codebase; likely applied directly
+    # against the DB from a channel-manager integration branch that was
+    # never merged. Added to document reality, not to wire up new behavior.
+    external_reservation_id = Column(String(100), nullable=True)
+    reservation_notes = Column(Text, nullable=True)
+    special_requests = Column(Text, nullable=True)
+    booking_source = Column(String(100), nullable=True)
+    payment_status = Column(String(50), nullable=True, default="paid")
+    payment_method = Column(String(50), nullable=True, default="card")
+    currency = Column(String(10), nullable=True, default="USD")
+    room_rate = Column(DECIMAL(10, 2), nullable=True)
+    taxes = Column(DECIMAL(10, 2), nullable=True)
+    discount = Column(DECIMAL(10, 2), nullable=True)
+    additional_charges = Column(DECIMAL(10, 2), nullable=True)
+    is_demo = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         CheckConstraint(
@@ -623,6 +666,8 @@ class OrderItem(Base, UUIDMixin, TimestampMixin):
     item_name = Column(String(255))
     quantity = Column(Integer)
     price = Column(DECIMAL(10, 2))
+    # Live column, never declared here — found by the schema-drift audit.
+    total_price = Column(DECIMAL(10, 2), nullable=True)
 
     order = relationship("Order", back_populates="items")
 
@@ -674,8 +719,8 @@ class DemoRequest(Base, UUIDMixin, TimestampMixin):
 class AuditLog(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "audit_logs"
 
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     user_email = Column(String(255))
 
     action = Column(String(50), nullable=False, index=True)
@@ -686,8 +731,12 @@ class AuditLog(Base, UUIDMixin, TimestampMixin):
     new_values = Column(JSONB)
     details = Column(Text)
 
-    property_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    # Live DB enforces this FK (ON DELETE SET NULL) but it was never
+    # declared here — found by the schema-drift audit.
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
     ip_address = Column(INET)
+    # Live column, never declared here — found by the schema-drift audit.
+    is_system_action = Column(Boolean, nullable=True)
     user_agent = Column(String(500))
 
     severity = Column(String(20), default="low")  # low / medium / high / critical
@@ -711,6 +760,7 @@ class EmployeeAvailability(Base, UUIDMixin):
     notes        = Column(Text, nullable=True)
     created_at   = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at   = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    is_demo      = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         UniqueConstraint("employee_id", "availability_date", name="uq_employee_availability_date"),
@@ -734,6 +784,7 @@ class WeeklySchedule(Base, UUIDMixin):
     published_at    = Column(DateTime, nullable=True)
     created_at      = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at      = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    is_demo         = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         UniqueConstraint("employee_id", "week_start_date", name="uq_employee_weekly_schedule"),
@@ -757,6 +808,7 @@ class ShiftAssignment(Base, UUIDMixin):
     status           = Column(String(50), nullable=False, default="scheduled", index=True)
     created_at       = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at       = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    is_demo          = Column(Boolean, nullable=False, default=False)
 
     schedule             = relationship("WeeklySchedule", back_populates="shift_assignments")
     employee             = relationship("Employee", back_populates="shift_assignments", foreign_keys=[employee_id])
@@ -786,6 +838,7 @@ class ReplacementRequest(Base, UUIDMixin):
     response_reason         = Column(Text, nullable=True)
     created_at              = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at              = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    is_demo                 = Column(Boolean, nullable=False, default=False)
 
     shift_assignment     = relationship("ShiftAssignment", back_populates="replacement_requests")
     original_employee    = relationship("Employee", foreign_keys=[original_employee_id])
@@ -862,6 +915,7 @@ class Complaint(Base, UUIDMixin):
     created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
     updated_at = Column(DateTime, nullable=False, server_default=func.now())
     deleted_at = Column(DateTime, nullable=True)
+    is_demo    = Column(Boolean, nullable=False, default=False)
 
     creator     = relationship("User", foreign_keys=[created_by])
     assignee    = relationship("User", foreign_keys=[assigned_to])
@@ -990,6 +1044,7 @@ class Document(Base, UUIDMixin):
     updated_at    = Column(DateTime, nullable=True)
     last_modified = Column(DateTime, nullable=True)
     deleted_at    = Column(DateTime, nullable=True)
+    is_demo       = Column(Boolean, nullable=False, default=False)
 
     uploader   = relationship("User", foreign_keys=[uploaded_by])
     owner      = relationship("User", foreign_keys=[owner_id])
