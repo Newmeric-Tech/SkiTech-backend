@@ -300,18 +300,35 @@ async def complete_sop(
 
     return {"message": "SOP completed successfully"}
 
+
+def _with_sop_fields(exec_obj: SOPExecution, sop: Optional[SOPItem]) -> dict:
+    """Merge execution fields with its SOP item's title/description/priority/due_date.
+
+    Joined directly by sop_id rather than via a separately-filtered SOP list, so a
+    task still shows its real title even if the SOP was later soft-deleted or falls
+    outside the viewer's list-visibility scope (department/property filters).
+    """
+    data = SOPExecutionResponse.model_validate(exec_obj).model_dump()
+    if sop:
+        data["sop_title"] = sop.title
+        data["sop_description"] = sop.description
+        data["sop_priority"] = sop.priority
+        data["sop_due_date"] = sop.due_date
+    return data
+
+
 @router.get("/my-tasks", response_model=List[SOPExecutionResponse])
 async def my_sops(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("view_sop")),
 ):
     result = await db.execute(
-        select(SOPExecution).where(
-            SOPExecution.user_id == UUID(user["user_id"])
-        )
+        select(SOPExecution, SOPItem)
+        .outerjoin(SOPItem, SOPItem.id == SOPExecution.sop_id)
+        .where(SOPExecution.user_id == UUID(user["user_id"]))
     )
 
-    return result.scalars().all()
+    return [_with_sop_fields(exec_obj, sop) for exec_obj, sop in result.all()]
 
 
 # ── Proof of Work ─────────────────────────────────────────
@@ -359,9 +376,13 @@ async def pending_approvals(
     user: dict = Depends(require_roles(["Manager", "Tenant Admin", "Super Admin"])),
 ):
     """Manager fetches proof submissions for their own property only."""
-    q = select(SOPExecution).where(
-        SOPExecution.tenant_id == UUID(user["tenant_id"]),
-        SOPExecution.status == "proof_submitted",
+    q = (
+        select(SOPExecution, SOPItem)
+        .outerjoin(SOPItem, SOPItem.id == SOPExecution.sop_id)
+        .where(
+            SOPExecution.tenant_id == UUID(user["tenant_id"]),
+            SOPExecution.status == "proof_submitted",
+        )
     )
     # Managers are scoped to their property; Tenant Admin / Super Admin see all
     if user.get("role") == "Manager":
@@ -369,7 +390,7 @@ async def pending_approvals(
         if prop_id:
             q = q.where(SOPExecution.property_id == UUID(prop_id))
     result = await db.execute(q.order_by(SOPExecution.proof_submitted_at.desc()))
-    return result.scalars().all()
+    return [_with_sop_fields(exec_obj, sop) for exec_obj, sop in result.all()]
 
 
 @router.post("/executions/{execution_id}/approve")

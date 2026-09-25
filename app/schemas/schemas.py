@@ -413,6 +413,10 @@ class SOPExecutionResponse(BaseModel):
     rejection_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    sop_title: Optional[str] = None
+    sop_description: Optional[str] = None
+    sop_priority: Optional[str] = None
+    sop_due_date: Optional[datetime] = None
 
     class Config:
         from_attributes = True
