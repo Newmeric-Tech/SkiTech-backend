@@ -25,6 +25,20 @@ class AttendanceService:
         tenant_id: str,
         punch_in_request: PunchInRequest,
     ) -> Tuple[AttendanceRecord, bool, Optional[str]]:
+        existing = await db.execute(
+            select(AttendanceRecord).where(
+                and_(
+                    AttendanceRecord.user_id == user_id,
+                    AttendanceRecord.property_id == property_id,
+                    AttendanceRecord.tenant_id == tenant_id,
+                    AttendanceRecord.status == "active",
+                    AttendanceRecord.punch_out_time == None,
+                )
+            )
+        )
+        if existing.scalars().first():
+            raise ValueError("You already have an active punch-in — punch out first")
+
         is_valid, error_msg = validate_coordinates(
             punch_in_request.geolocation.latitude,
             punch_in_request.geolocation.longitude,
