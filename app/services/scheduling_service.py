@@ -18,7 +18,7 @@ from app.schemas.scheduling import (
     EmployeeAvailabilityCreate, WeeklyScheduleCreate, ShiftAssignmentCreate,
     ReplacementRequestCreate, ShiftResponseCreate, CriticalActionItem,
     ConflictDetectionResult, RecommendedEmployeeScore, AIRecommendationResponse,
-    ManagerDashboardData, StaffDashboardData
+    ManagerDashboardData, StaffDashboardData, StaffTimelineEvent
 )
 
 
@@ -564,11 +564,54 @@ class SchedulingService:
         all_requests = result.scalars().all()
         accepted_count = sum(1 for r in all_requests if r.status == "accepted")
         rejected_count = sum(1 for r in all_requests if r.status == "rejected")
-        
+
+        # Activity timeline: every request this employee is party to, either
+        # as the one needing coverage (original_employee_id) or as a
+        # replacement candidate (replacement_employee_id) — unlike
+        # pending_requests above, this is unfiltered by status so accepted/
+        # rejected history shows too.
+        stmt = select(ReplacementRequest).where(
+            and_(
+                ReplacementRequest.tenant_id == self.tenant_id,
+                or_(
+                    ReplacementRequest.original_employee_id == employee_id,
+                    ReplacementRequest.replacement_employee_id == employee_id,
+                ),
+            )
+        ).order_by(ReplacementRequest.created_at.desc()).limit(20)
+        result = await self.db.execute(stmt)
+        timeline_requests = result.scalars().all()
+
+        timeline: List[StaffTimelineEvent] = []
+        for r in timeline_requests:
+            timeline.append(StaffTimelineEvent(
+                type="request_received",
+                replacement_request_id=str(r.id),
+                timestamp=r.created_at,
+                shift_date=r.shift_date,
+                shift_start_time=r.shift_start_time,
+                shift_end_time=r.shift_end_time,
+            ))
+            # Only a real response by *this* employee — direct_assign_replacement
+            # (manager path) never sets responded_at/responded_by, so that case
+            # naturally produces no "responded" event here, correctly.
+            if r.responded_at and r.responded_by == employee_id and r.status in ("accepted", "rejected"):
+                timeline.append(StaffTimelineEvent(
+                    type="responded",
+                    replacement_request_id=str(r.id),
+                    timestamp=r.responded_at,
+                    response_type=r.status,
+                    shift_date=r.shift_date,
+                    shift_start_time=r.shift_start_time,
+                    shift_end_time=r.shift_end_time,
+                ))
+        timeline.sort(key=lambda e: e.timestamp, reverse=True)
+
         return StaffDashboardData(
             emergency_shift_requests=pending_requests,
             pending_requests_count=len(pending_requests),
             accepted_requests_count=accepted_count,
             rejected_requests_count=rejected_count,
-            current_week_schedule=current_schedule
+            current_week_schedule=current_schedule,
+            timeline=timeline,
         )

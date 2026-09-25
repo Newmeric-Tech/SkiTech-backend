@@ -308,6 +308,21 @@ class EmployeeScheduleOverview(BaseModel):
     pending_shift_requests: List[ReplacementRequestResponse] = []
 
 
+class StaffTimelineEvent(BaseModel):
+    """A single real activity-timeline entry for a staff member's own
+    scheduling involvement — derived server-side from ReplacementRequest
+    rows the employee is party to (as the one needing coverage or as a
+    replacement candidate). No invented event types; "responded" only
+    appears when responded_at/responded_by are actually set on the row."""
+    type: str  # "request_received" | "responded"
+    replacement_request_id: str
+    timestamp: datetime
+    response_type: Optional[str] = None  # "accepted" | "rejected" — only when type == "responded"
+    shift_date: datetime
+    shift_start_time: str
+    shift_end_time: str
+
+
 class StaffDashboardData(BaseModel):
     """Data for Staff Dashboard"""
     emergency_shift_requests: List[ReplacementRequestResponse]
@@ -315,6 +330,7 @@ class StaffDashboardData(BaseModel):
     accepted_requests_count: int
     rejected_requests_count: int
     current_week_schedule: Optional[WeeklyScheduleResponse] = None
+    timeline: List[StaffTimelineEvent] = []
 
 
 class ManagerDashboardData(BaseModel):
