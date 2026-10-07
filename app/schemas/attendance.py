@@ -6,6 +6,7 @@ Request/response schemas for punch in/out operations and geofence management.
 
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, validator
 
@@ -40,10 +41,10 @@ class PunchOutRequest(BaseModel):
 
 
 class AttendanceRecordResponse(BaseModel):
-    id: str
-    user_id: str
-    property_id: str
-    tenant_id: str
+    id: UUID
+    user_id: UUID
+    property_id: UUID
+    tenant_id: UUID
     punch_in_time: datetime
     punch_in_lat: float
     punch_in_lon: float
