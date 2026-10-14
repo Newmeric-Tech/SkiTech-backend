@@ -1,0 +1,12 @@
+{
+  "_source": "Shaped from the 200 response schema of https://developers.cloudbeds.com/reference/get_getreservationswithratedetails-2",
+  "success": true,
+  "data": [
+    {"propertyID": "173", "reservationID": "9000001", "status": "checked_in",
+     "propertyCurrency": "EUR", "total": 412.75, "balance": 0},
+    {"propertyID": "173", "reservationID": "9000002", "status": "canceled",
+     "propertyCurrency": "EUR", "total": 0, "balance": 0}
+  ],
+  "count": 2,
+  "total": 2
+}

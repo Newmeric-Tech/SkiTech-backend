@@ -1,11 +1,43 @@
 import os
 import httpx
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from app.services.adapters.base import BaseAdapter
 
+# Cloudbeds API reference (developers.cloudbeds.com/reference):
+#   getReservations                -> get_getreservations-2
+#   getReservationsWithRateDetails -> get_getreservationswithratedetails-2
+PAGE_SIZE = 100        # pageSize: "Results page size. Max = 100"
+RATE_ID_BATCH = 100    # reservationID is "comma-separated"; no max documented
+
+# Reservation status enum: not_confirmed, confirmed, canceled, checked_in,
+# checked_out, no_show. Note "canceled" with one L.
+_STATUS_MAP = {
+    "not_confirmed": "confirmed",
+    "confirmed": "confirmed",
+    "canceled": "cancelled",
+    "checked_in": "checked_in",
+    "checked_out": "checked_out",
+    "no_show": "no_show",
+}
+
+
+def _parse_created(value: Optional[str]) -> Optional[datetime]:
+    # dateCreated is documented only as format date-time.
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 class CloudbedsAdapter(BaseAdapter):
-    
+
+    def __init__(self, transport: Optional[httpx.AsyncBaseTransport] = None):
+        # transport is injectable so tests can serve stored fixtures
+        self._transport = transport
+
     def _get_base_url(self) -> str:
         return os.getenv("CLOUDBEDS_BASE_URL", "https://hotels.cloudbeds.com/api/v1.2")
 
@@ -77,74 +109,100 @@ class CloudbedsAdapter(BaseAdapter):
                 }
             ]
 
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "X-Property-Id": str(property_id)
+        }
         try:
-            page_number = 1
+            async with httpx.AsyncClient(transport=self._transport, timeout=15.0) as client:
+                # checkInFrom/checkInTo are the documented check-in filters; the
+                # previous startDate/endDate are not getReservations parameters.
+                # includeAllRooms returns rooms[] (roomID, roomName, roomTypeName);
+                # includeGuestsDetails returns guestList (guestEmail, guestPhone).
+                reservations = await self._get_pages(client, "/getReservations", headers, {
+                    "propertyID": str(property_id),
+                    "checkInFrom": from_date,
+                    "checkInTo": to_date,
+                    "includeAllRooms": "true",
+                    "includeGuestsDetails": "true",
+                })
+
+                # getReservations has no total or currency; the rate-details
+                # endpoint documents total and propertyCurrency per reservation.
+                rate_details: Dict[str, Dict[str, Any]] = {}
+                ids = [str(r["reservationID"]) for r in reservations]
+                for i in range(0, len(ids), RATE_ID_BATCH):
+                    for d in await self._get_pages(client, "/getReservationsWithRateDetails", headers, {
+                        "propertyID": str(property_id),
+                        "reservationID": ",".join(ids[i:i + RATE_ID_BATCH]),
+                    }):
+                        rate_details[str(d["reservationID"])] = d
+
             all_reservations = []
-            fetch_more = True
+            for resv in reservations:
+                check_in = datetime.fromisoformat(resv["startDate"])
+                check_out = datetime.fromisoformat(resv["endDate"])
+                num_nights = (check_out - check_in).days or 1
 
-            while fetch_more and page_number <= 5:
-                url = f"{self._get_base_url()}/getReservations"
-                params = {
-                    "startDate": from_date,
-                    "endDate": to_date,
-                    "pageSize": 100,
-                    "pageNumber": page_number
-                }
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "X-Property-Id": str(property_id)
-                }
-                
-                async with httpx.AsyncClient() as client:
-                    res = await client.get(url, params=params, headers=headers, timeout=15.0)
+                # A reservation can hold several rooms; like the other adapters
+                # we keep one row per reservation and report the first room.
+                rooms = resv.get("rooms") or []
+                room = next((r for r in rooms if r.get("roomID")), rooms[0] if rooms else {})
 
-                if res.status_code != 200:
-                    raise Exception(f"Failed to fetch Cloudbeds reservations: {res.reason_phrase}")
+                guests = (resv.get("guestList") or {}).values()
+                main_guest = next((g for g in guests if g.get("isMainGuest")), {})
 
-                json_data = res.json()
-                reservations = json_data.get("data", [])
+                rates = rate_details.get(str(resv["reservationID"]), {})
 
-                if not reservations:
-                    break
-
-                for resv in reservations:
-                    check_in = datetime.fromisoformat(resv["startDate"])
-                    check_out = datetime.fromisoformat(resv["endDate"])
-                    num_nights = (check_out - check_in).days or 1
-
-                    status = resv.get("status", "confirmed")
-                    if status not in ["confirmed", "checked_in", "checked_out", "cancelled", "no_show"]:
-                        status = "confirmed"
-
-                    all_reservations.append({
-                        "external_id": str(resv.get("reservationID")),
-                        "status": status,
-                        "guest_name": resv.get("guestName", "Unknown Guest"),
-                        "guest_email": resv.get("guestEmail"),
-                        "guest_phone": resv.get("guestPhone"),
-                        "room_number": str(resv.get("roomID", "N/A")),
-                        "room_type": resv.get("roomTypeName", "Standard"),
-                        "check_in_date": check_in,
-                        "check_out_date": check_out,
-                        "num_nights": num_nights,
-                        "num_adults": resv.get("adults", 1),
-                        "num_children": resv.get("children", 0),
-                        "total_amount": float(resv.get("grandTotal") or 0.0),
-                        "currency": resv.get("currency", "USD"),
-                        "booking_source": resv.get("channelName", "Direct"),
-                        "special_requests": resv.get("specialRequests"),
-                        "booked_at": datetime.fromisoformat(resv["dateCreated"].replace("Z", "+00:00")) if "dateCreated" in resv else datetime.now()
-                    })
-
-                if len(reservations) < 100:
-                    fetch_more = False
-                else:
-                    page_number += 1
+                all_reservations.append({
+                    "external_id": str(resv.get("reservationID")),
+                    "status": _STATUS_MAP.get(resv.get("status"), "confirmed"),
+                    "guest_name": resv.get("guestName") or "Unknown Guest",
+                    "guest_email": main_guest.get("guestEmail"),
+                    "guest_phone": main_guest.get("guestPhone"),
+                    "room_number": room.get("roomName") or "N/A",
+                    "room_type": room.get("roomTypeName") or "Standard",
+                    "check_in_date": check_in,
+                    "check_out_date": check_out,
+                    "num_nights": num_nights,
+                    "num_adults": int(resv.get("adults") or 1),
+                    "num_children": int(resv.get("children") or 0),
+                    "total_amount": float(rates.get("total") or 0.0),
+                    "currency": rates.get("propertyCurrency") or "USD",
+                    "booking_source": resv.get("sourceName") or "Direct",
+                    "special_requests": None,
+                    "booked_at": _parse_created(resv.get("dateCreated")) or datetime.now()
+                })
 
             return all_reservations
         except Exception as e:
             print(f"Error fetching Cloudbeds reservations: {e}")
             raise e
+
+    async def _get_pages(
+        self, client: httpx.AsyncClient, path: str, headers: Dict[str, str], params: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Walk pageNumber until a short or empty page, or until the
+        documented response `total` has been collected."""
+        items: List[Dict[str, Any]] = []
+        page_number = 1
+        while True:
+            res = await client.get(
+                f"{self._get_base_url()}{path}",
+                params={**params, "pageSize": PAGE_SIZE, "pageNumber": page_number},
+                headers=headers,
+            )
+            if res.status_code != 200:
+                raise Exception(f"Cloudbeds {path} failed: {res.reason_phrase}")
+            json_data = res.json()
+            if json_data.get("success") is False:
+                raise Exception(f"Cloudbeds {path} failed: {json_data.get('message')}")
+            page = json_data.get("data") or []
+            items.extend(page)
+            total = json_data.get("total")
+            if len(page) < PAGE_SIZE or (total is not None and len(items) >= int(total)):
+                return items
+            page_number += 1
 
     async def fetch_availability(
         self,

@@ -1,0 +1,60 @@
+{
+  "_source": "Shaped from the 200 response schema of https://developers.cloudbeds.com/reference/get_getreservations-2 (includeAllRooms=true, includeGuestsDetails=true)",
+  "success": true,
+  "data": [
+    {
+      "propertyID": "173",
+      "reservationID": "9000001",
+      "dateCreated": "2023-03-20 10:15:00",
+      "dateModified": "2023-04-23 15:00:00",
+      "status": "checked_in",
+      "guestID": "g1",
+      "guestName": "Fixture Guest",
+      "startDate": "2023-04-23",
+      "endDate": "2023-04-25",
+      "adults": "2",
+      "children": "1",
+      "balance": 0,
+      "sourceName": "Booking.com",
+      "sourceID": "s-1",
+      "rooms": [
+        {
+          "roomTypeID": "rt-1", "roomTypeName": "Queen Deluxe", "roomTypeIsVirtual": false,
+          "subReservationID": "9000001-1", "isRoomLocked": false, "guestID": "g1",
+          "adults": "2", "children": "1", "reservationRoomID": "rr-1",
+          "roomID": "55501", "roomName": "303",
+          "roomCheckIn": "2023-04-23", "roomCheckOut": "2023-04-25", "roomStatus": "in_house"
+        }
+      ],
+      "guestList": {
+        "g1": {"guestID": "g1", "guestName": "Fixture Guest", "guestEmail": "fixture.guest@example.invalid",
+               "guestPhone": "+00 000 000", "isMainGuest": true, "assignedRoom": true, "roomID": "55501", "roomName": "303"},
+        "g2": {"guestID": "g2", "guestName": "Second Guest", "guestEmail": "second@example.invalid",
+               "guestPhone": "+00 111 111", "isMainGuest": false}
+      },
+      "origin": "booking"
+    },
+    {
+      "propertyID": "173",
+      "reservationID": "9000002",
+      "dateCreated": "2023-03-21 08:00:00",
+      "status": "canceled",
+      "guestID": "g3",
+      "guestName": "Other Guest",
+      "startDate": "2023-04-24",
+      "endDate": "2023-04-25",
+      "adults": "1",
+      "children": "0",
+      "sourceName": "Website",
+      "rooms": [
+        {
+          "roomTypeID": "rt-1", "roomTypeName": "Queen Deluxe", "subReservationID": "9000002-1",
+          "roomID": null, "roomName": null, "roomStatus": "cancelled"
+        }
+      ],
+      "guestList": {}
+    }
+  ],
+  "count": 2,
+  "total": 2
+}
