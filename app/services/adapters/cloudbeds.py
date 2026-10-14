@@ -3,6 +3,7 @@ import httpx
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from app.services.adapters.base import BaseAdapter
+from app.utils.safe_errors import safe_error_summary
 
 # Cloudbeds API reference (developers.cloudbeds.com/reference):
 #   getReservations                -> get_getreservations-2
@@ -176,7 +177,7 @@ class CloudbedsAdapter(BaseAdapter):
 
             return all_reservations
         except Exception as e:
-            print(f"Error fetching Cloudbeds reservations: {e}")
+            print(f"Error fetching Cloudbeds reservations: {safe_error_summary(e)}")
             raise e
 
     async def _get_pages(
@@ -256,5 +257,5 @@ class CloudbedsAdapter(BaseAdapter):
 
             return availability_list
         except Exception as e:
-            print(f"Error fetching Cloudbeds availability: {e}")
+            print(f"Error fetching Cloudbeds availability: {safe_error_summary(e)}")
             raise e

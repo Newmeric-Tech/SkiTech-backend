@@ -3,6 +3,7 @@ import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 from app.services.adapters.base import BaseAdapter
+from app.utils.safe_errors import safe_error_summary
 
 # Mews Connector API references (docs.mews.com/connector-api):
 #   reservations  -> operations/reservations#get-all-reservations-ver-2023-06-06
@@ -262,7 +263,7 @@ class MewsAdapter(BaseAdapter):
 
             return unified
         except Exception as e:
-            print(f"Error fetching Mews reservations: {e}")
+            print(f"Error fetching Mews reservations: {safe_error_summary(e)}")
             raise e
 
     async def _fetch_colliding_reservations(
@@ -328,5 +329,5 @@ class MewsAdapter(BaseAdapter):
 
             return availability_list
         except Exception as e:
-            print(f"Error fetching Mews availability: {e}")
+            print(f"Error fetching Mews availability: {safe_error_summary(e)}")
             raise e

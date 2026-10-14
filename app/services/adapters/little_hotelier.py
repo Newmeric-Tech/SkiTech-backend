@@ -2,6 +2,7 @@ import httpx
 from datetime import datetime
 from typing import Dict, Any, List
 from app.services.adapters.base import BaseAdapter
+from app.utils.safe_errors import safe_error_summary
 
 class LittleHotelierAdapter(BaseAdapter):
     
@@ -105,7 +106,7 @@ class LittleHotelierAdapter(BaseAdapter):
 
             return unified
         except Exception as e:
-            print(f"Error fetching Little Hotelier reservations: {e}")
+            print(f"Error fetching Little Hotelier reservations: {safe_error_summary(e)}")
             raise e
 
     async def fetch_availability(

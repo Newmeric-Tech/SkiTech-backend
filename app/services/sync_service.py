@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.utils.crypto import decrypt
 from app.services.adapters import get_adapter
+from app.utils.safe_errors import safe_error_summary
 
 def add_days(date_str: str, days: int) -> str:
     date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -132,7 +133,7 @@ async def _run_single_integration_sync(db: AsyncSession, integration: Any) -> No
             )
             print(f"Integration {integration.id}: Fetched {len(availability)} availability rows.")
         except Exception as avail_err:
-            print(f"Non-blocking warning: Failed to sync availability for {integration.provider_name}: {avail_err}")
+            print(f"Non-blocking warning: Failed to sync availability for {integration.provider_name}: {safe_error_summary(avail_err)}")
 
         # 7. Update integration success status
         update_query = text("""
@@ -146,7 +147,10 @@ async def _run_single_integration_sync(db: AsyncSession, integration: Any) -> No
         print(f"Integration {integration.id} sync completed successfully.")
 
     except Exception as err:
-        print(f"Sync error for integration {integration.id}: {err}")
+        # str(err) of a DB error carries the bound parameters (guest name,
+        # email, phone); store and print only the sanitized summary.
+        safe_message = safe_error_summary(err)
+        print(f"Sync error for integration {integration.id}: {safe_message}")
         # A failed upsert leaves the Postgres transaction aborted; roll back so
         # the error bookkeeping below can run. The sync_logs row survives
         # because create_sync_log already committed it.
@@ -157,8 +161,8 @@ async def _run_single_integration_sync(db: AsyncSession, integration: Any) -> No
             SET connection_status = 'error', error_message = :error_message
             WHERE id = :id
         """)
-        await db.execute(error_query, {"error_message": str(err), "id": integration.id})
-        await complete_sync_log(db, log_id, "error", 0, str(err))
+        await db.execute(error_query, {"error_message": safe_message, "id": integration.id})
+        await complete_sync_log(db, log_id, "error", 0, safe_message)
 
 
 async def sync_single_integration(integration: Any) -> None:
@@ -182,4 +186,4 @@ async def sync_all_integrations() -> None:
             for integration in integrations:
                 await _run_single_integration_sync(db, integration)
         except Exception as e:
-            print(f"Error fetching integrations for sync: {e}")
+            print(f"Error fetching integrations for sync: {safe_error_summary(e)}")
