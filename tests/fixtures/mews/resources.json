@@ -1,0 +1,34 @@
+{
+  "_source": "Shaped from the Resource object of https://docs.mews.com/connector-api/operations/resources#get-all-resources",
+  "Resources": [
+    {
+      "Id": "20e00c32-d561-4008-8609-82d8aa525714",
+      "EnterpriseId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "IsActive": true,
+      "ParentResourceId": null,
+      "Name": "101",
+      "State": "Inspected",
+      "Descriptions": {},
+      "CreatedUtc": "2022-01-01T00:00:00Z",
+      "UpdatedUtc": "2023-01-01T00:00:00Z",
+      "Data": {"Discriminator": "Space", "Value": {"FloorNumber": "1"}},
+      "ExternalNames": {},
+      "Directions": {}
+    },
+    {
+      "Id": "1ec29188-01ca-4294-9983-fac59f85a448",
+      "EnterpriseId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "IsActive": true,
+      "ParentResourceId": null,
+      "Name": "102",
+      "State": "OutOfOrder",
+      "Descriptions": {},
+      "CreatedUtc": "2022-01-01T00:00:00Z",
+      "UpdatedUtc": "2023-01-01T00:00:00Z",
+      "Data": {"Discriminator": "Space", "Value": {"FloorNumber": "1"}},
+      "ExternalNames": {},
+      "Directions": {}
+    }
+  ],
+  "Cursor": "1ec29188-01ca-4294-9983-fac59f85a448"
+}

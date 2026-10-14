@@ -1,0 +1,56 @@
+{
+  "_source": "Shaped from the response example of https://docs.mews.com/connector-api/operations/reservations#get-all-reservations-ver-2023-06-06",
+  "Reservations": [
+    {
+      "Id": "0f515589-99b4-423d-b83a-b237009f0509",
+      "ServiceId": "bd26d8db-86da-4f96-9efc-e5a4654a4a94",
+      "AccountId": "fadd5bb6-b428-45d5-94f8-fd0d89fece6d",
+      "AccountType": "Customer",
+      "Number": "52",
+      "State": "Started",
+      "Origin": "ChannelManager",
+      "CreatedUtc": "2023-03-23T16:00:00Z",
+      "UpdatedUtc": "2023-04-22T17:00:00Z",
+      "CancelledUtc": null,
+      "RequestedResourceCategoryId": "773d5e42-de1e-43a0-9ce6-f940faf2303f",
+      "AssignedResourceId": "20e00c32-d561-4008-8609-82d8aa525714",
+      "AssignedResourceLocked": false,
+      "ChannelNumber": "TW48ZP",
+      "CancellationReason": null,
+      "StartUtc": "2023-04-23T14:00:00Z",
+      "EndUtc": "2023-04-25T12:00:00Z",
+      "ScheduledStartUtc": "2023-04-23T14:00:00Z",
+      "ActualStartUtc": "2023-04-23T15:10:00Z",
+      "ScheduledEndUtc": "2023-04-25T12:00:00Z",
+      "ActualEndUtc": null,
+      "PersonCounts": [
+        {"AgeCategoryId": "1f67644f-052d-4863-acdf-ae1600c60ca0", "Count": 2},
+        {"AgeCategoryId": "ab58c939-be30-4a60-8f75-ae1600c60c9f", "Count": 1}
+      ]
+    },
+    {
+      "Id": "6c1f2a8e-0000-4d1e-9a51-b237009f0aaa",
+      "ServiceId": "bd26d8db-86da-4f96-9efc-e5a4654a4a94",
+      "AccountId": "c021013e-4930-4592-8e32-91b0b1fc9663",
+      "AccountType": "Company",
+      "Number": "53",
+      "State": "Canceled",
+      "Origin": "Commander",
+      "CreatedUtc": "2023-03-24T09:00:00Z",
+      "UpdatedUtc": "2023-04-23T09:00:00Z",
+      "CancelledUtc": "2023-04-23T09:00:00Z",
+      "RequestedResourceCategoryId": "773d5e42-de1e-43a0-9ce6-f940faf2303f",
+      "AssignedResourceId": null,
+      "AssignedResourceLocked": false,
+      "CancellationReason": "NoShow",
+      "ScheduledStartUtc": "2023-04-23T14:00:00Z",
+      "ActualStartUtc": null,
+      "ScheduledEndUtc": "2023-04-24T12:00:00Z",
+      "ActualEndUtc": null,
+      "PersonCounts": [
+        {"AgeCategoryId": "1f67644f-052d-4863-acdf-ae1600c60ca0", "Count": 1}
+      ]
+    }
+  ],
+  "Cursor": "6c1f2a8e-0000-4d1e-9a51-b237009f0aaa"
+}

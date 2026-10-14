@@ -1,0 +1,8 @@
+{
+  "_source": "Shaped from the Age category object of https://docs.mews.com/connector-api/operations/agecategories",
+  "AgeCategories": [
+    {"Id": "1f67644f-052d-4863-acdf-ae1600c60ca0", "Classification": "Adult"},
+    {"Id": "ab58c939-be30-4a60-8f75-ae1600c60c9f", "Classification": "Child"}
+  ],
+  "Cursor": "ab58c939-be30-4a60-8f75-ae1600c60c9f"
+}

@@ -1,0 +1,12 @@
+{
+  "_source": "Shaped from the Order item and Amount objects of https://docs.mews.com/connector-api/operations/orderitems#get-all-order-items and https://docs.mews.com/connector-api/operations/_objects#amount",
+  "OrderItems": [
+    {"Id": "a1", "ServiceOrderId": "0f515589-99b4-423d-b83a-b237009f0509", "CanceledUtc": null,
+     "Amount": {"Currency": "EUR", "NetValue": 180.0, "GrossValue": 200.0, "TaxValues": [], "Breakdown": {}}},
+    {"Id": "a2", "ServiceOrderId": "0f515589-99b4-423d-b83a-b237009f0509", "CanceledUtc": null,
+     "Amount": {"Currency": "EUR", "NetValue": 90.0, "GrossValue": 100.5, "TaxValues": [], "Breakdown": {}}},
+    {"Id": "a3", "ServiceOrderId": "0f515589-99b4-423d-b83a-b237009f0509", "CanceledUtc": "2023-04-01T00:00:00Z",
+     "Amount": {"Currency": "EUR", "NetValue": 900.0, "GrossValue": 999.0, "TaxValues": [], "Breakdown": {}}}
+  ],
+  "Cursor": "a3"
+}

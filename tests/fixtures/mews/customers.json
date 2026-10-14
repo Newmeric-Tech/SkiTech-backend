@@ -1,0 +1,13 @@
+{
+  "_source": "Shaped from the Customer object of https://docs.mews.com/connector-api/operations/customers#get-all-customers",
+  "Customers": [
+    {
+      "Id": "fadd5bb6-b428-45d5-94f8-fd0d89fece6d",
+      "FirstName": "Fixture",
+      "LastName": "Guest",
+      "Email": "fixture.guest@example.invalid",
+      "Phone": "+00 000 000"
+    }
+  ],
+  "Cursor": "fadd5bb6-b428-45d5-94f8-fd0d89fece6d"
+}
