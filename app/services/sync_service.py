@@ -147,6 +147,10 @@ async def _run_single_integration_sync(db: AsyncSession, integration: Any) -> No
 
     except Exception as err:
         print(f"Sync error for integration {integration.id}: {err}")
+        # A failed upsert leaves the Postgres transaction aborted; roll back so
+        # the error bookkeeping below can run. The sync_logs row survives
+        # because create_sync_log already committed it.
+        await db.rollback()
         # 8. Mark integration as error
         error_query = text("""
             UPDATE integrations
