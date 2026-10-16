@@ -20,7 +20,7 @@ def generate_otp() -> str:
 
 def _send_email(to: str, subject: str, html: str) -> bool:
     if not settings.SENDGRID_API_KEY:
-        logger.warning(f"[Email] No SENDGRID_API_KEY set — skipping email to {to}")
+        logger.warning("[Email] No SENDGRID_API_KEY set — skipping email")
         return False
 
     try:
@@ -35,7 +35,7 @@ def _send_email(to: str, subject: str, html: str) -> bool:
         )
         sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
         response = sg.send(message)
-        logger.info(f"[SendGrid] ✅ Email sent to {to} — status: {response.status_code}")
+        logger.info(f"[SendGrid] ✅ Email sent — status: {response.status_code}")
         return True
     except Exception as e:
         # str(e) and exc_info can carry the recipient and SendGrid's response body.
@@ -45,7 +45,7 @@ def _send_email(to: str, subject: str, html: str) -> bool:
 
 def send_invitation(email: str, temp_password: str, otp: str) -> bool:
     """Send invite email with temp password + OTP + verify button."""
-    logger.info(f"[Invite] Sending invitation email to {email}")
+    logger.info("[Invite] Sending invitation email")
 
     from urllib.parse import quote
     frontend_url = settings.FRONTEND_URL
