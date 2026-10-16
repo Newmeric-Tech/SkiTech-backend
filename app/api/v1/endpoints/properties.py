@@ -309,7 +309,7 @@ async def upload_property_image(
                 detail="Image storage unavailable. Please try again.",
             )
         except Exception as exc:
-            logger.error("Unexpected S3 error for property %s: %s", property_id, exc)
+            log_safe_exception(logger, f"Unexpected S3 error for property {property_id}", exc)
             raise HTTPException(status_code=500, detail="Failed to upload image to S3")
 
     # ── Local fallback (development / no S3 credentials) ───
