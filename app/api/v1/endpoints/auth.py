@@ -26,6 +26,7 @@ from app.core.security import (
     hash_password, verify_password,
 )
 from app.models.models import DemoRequest, User, Role
+from app.utils.safe_errors import log_safe_exception
 from app.schemas.schemas import (
     GoogleAuthRequest, LoginRequest, OTPVerifyRequest, PasswordResetConfirm,
     PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse, SuperAdminLoginRequest
@@ -114,11 +115,8 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         import logging
         logger = logging.getLogger("skitech")
-        logger.error(f"[REGISTER ERROR] {type(e).__name__}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Registration failed: {type(e).__name__}: {str(e)[:100]}"
-        )
+        log_safe_exception(logger, "[REGISTER ERROR]", e)
+        raise HTTPException(status_code=500, detail="Registration failed.")
 
 
 @router.post("/verify-otp")
@@ -235,11 +233,8 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     except HTTPException:
         raise
     except Exception as e:
-        _log.error(f"[LOGIN ERROR] {type(e).__name__}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Login error: {type(e).__name__}: {str(e)}"
-        )
+        log_safe_exception(_log, "[LOGIN ERROR]", e)
+        raise HTTPException(status_code=500, detail="Login failed due to a server error.")
 
 
 @router.post("/google", response_model=TokenResponse)
@@ -277,7 +272,7 @@ async def google_login(data: GoogleAuthRequest, db: AsyncSession = Depends(get_d
     except HTTPException:
         raise
     except Exception as e:
-        _log.error(f"[GOOGLE LOGIN] Token verification error: {e}", exc_info=True)
+        log_safe_exception(_log, "[GOOGLE LOGIN] Token verification error", e)
         raise HTTPException(status_code=401, detail="Google token verification failed")
 
     # ── 2. Find user by email ───────────────────────────────────────────────────
