@@ -15,7 +15,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean, CheckConstraint, Column, DateTime, DECIMAL, Float, ForeignKey,
-    Index, Integer, String, Text, TIMESTAMP, UniqueConstraint,
+    Index, Integer, String, Text, TIMESTAMP, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import relationship
@@ -528,9 +528,21 @@ class Room(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     status = Column(String(50), nullable=False, default="available")
     is_demo = Column(Boolean, nullable=False, default=False)
 
+    # Set when the room is imported from or adopted by a channel manager
+    # integration (see sync_service.plan_room_sync). Manual rooms leave these NULL.
+    integration_id = Column(UUID(as_uuid=True), ForeignKey("integrations.id", ondelete="SET NULL"), nullable=True)
+    external_id = Column(String(255), nullable=True)
+    synced_at = Column(DateTime(timezone=True), nullable=True)
+
     __table_args__ = (
         UniqueConstraint("property_id", "room_number", name="uq_room_number"),
         CheckConstraint("status IN ('available','occupied','maintenance')", name="check_room_status"),
+        Index(
+            "uq_room_integration_external",
+            "integration_id", "external_id",
+            unique=True,
+            postgresql_where=text("external_id IS NOT NULL"),
+        ),
     )
 
     bookings = relationship("Booking", back_populates="room")
