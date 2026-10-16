@@ -24,6 +24,7 @@ from app.api.dependencies import get_current_user, require_permission
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import OwnerDetails, Property
+from app.utils.safe_errors import log_safe_exception
 from app.schemas.schemas import (
     OwnerDetailsCreate, OwnerDetailsResponse, OwnerDetailsUpdate,
     PropertyCreate, PropertyResponse, PropertyUpdate,
@@ -230,7 +231,9 @@ async def get_property_image_upload_url(
         public_url = f"https://{settings.S3_PROPERTY_IMAGES_BUCKET}.s3.{settings.AWS_REGION}.amazonaws.com/{object_key}"
         return {"upload_url": presigned_url, "file_key": object_key, "public_url": public_url}
     except ClientError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # str(e) names the bucket/operation; log the S3 error code instead.
+        log_safe_exception(logger, f"Property image upload URL failed (code={e.response.get('Error', {}).get('Code')})", e)
+        raise HTTPException(status_code=500, detail="Could not create the upload URL.")
 
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}

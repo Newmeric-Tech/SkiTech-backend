@@ -492,4 +492,6 @@ def get_sop_upload_url(
         )
         return {"upload_url": presigned_url, "file_key": object_key}
     except ClientError as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        # str(e) names the bucket/operation; log the S3 error code instead.
+        log_safe_exception(logger, f"SOP upload URL failed (code={e.response.get('Error', {}).get('Code')})", e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create the upload URL.")

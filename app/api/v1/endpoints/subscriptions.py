@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_roles, require_roles_strict
+from app.utils.safe_errors import log_safe_exception
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import SubscriptionPlan, Tenant, TenantSubscription
@@ -313,8 +314,11 @@ async def create_checkout_session(
             },
         )
     except stripe.StripeError as e:
-        logger.error(f"Stripe error creating checkout: {e}")
-        raise HTTPException(status_code=502, detail=f"Payment service error: {str(e)}")
+        # Stripe's message can name customer/session ids; log its codes instead.
+        log_safe_exception(logger, "Stripe error creating checkout"
+            f" (code={getattr(e, 'code', None)} http_status={getattr(e, 'http_status', None)} "
+            f"request_id={getattr(e, 'request_id', None)})", e)
+        raise HTTPException(status_code=502, detail="Payment service error. Please try again.")
 
     return {"session_url": session.url, "session_id": session.id}
 
@@ -340,7 +344,10 @@ async def verify_checkout_session(
     try:
         session = stripe.checkout.Session.retrieve(session_id)
     except stripe.StripeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        log_safe_exception(logger, "Stripe error verifying checkout session"
+            f" (code={getattr(e, 'code', None)} http_status={getattr(e, 'http_status', None)} "
+            f"request_id={getattr(e, 'request_id', None)})", e)
+        raise HTTPException(status_code=502, detail="Payment service error. Please try again.")
 
     if session.payment_status != "paid":
         raise HTTPException(status_code=400, detail="Payment not completed")
@@ -425,8 +432,10 @@ async def create_portal_session(
             return_url=f"{frontend_url}/owner/settings?tab=billing",
         )
     except stripe.StripeError as e:
-        logger.error(f"Stripe portal error: {e}")
-        raise HTTPException(status_code=502, detail=f"Payment service error: {str(e)}")
+        log_safe_exception(logger, "Stripe portal error"
+            f" (code={getattr(e, 'code', None)} http_status={getattr(e, 'http_status', None)} "
+            f"request_id={getattr(e, 'request_id', None)})", e)
+        raise HTTPException(status_code=502, detail="Payment service error. Please try again.")
 
     return {"portal_url": session.url}
 
