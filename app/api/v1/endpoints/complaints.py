@@ -7,6 +7,7 @@ Routes for managing complaints:
 - Owner: View all complaints across organization
 """
 
+import logging
 from typing import List, Optional
 from uuid import UUID
 
@@ -24,7 +25,10 @@ from app.schemas.complaints import (
     ComplaintType, ComplaintCategory
 )
 from app.services.complaint_service import ComplaintService
+from app.utils.safe_errors import log_safe_exception
 
+
+logger = logging.getLogger("skitech")
 
 # Create router
 router = APIRouter(prefix="/complaints", tags=["Complaints & Error Log"])
@@ -73,7 +77,8 @@ async def create_complaint(
         result = await service.create_complaint(data)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] create_complaint failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.get("/", response_model=tuple[List[ComplaintListResponse], int])
@@ -104,7 +109,8 @@ async def list_complaints(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid filter value: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] list_complaints failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.get("/{complaint_id}", response_model=ComplaintDetailResponse)
@@ -121,7 +127,8 @@ async def get_complaint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] get_complaint failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.put("/{complaint_id}", response_model=ComplaintResponse)
@@ -139,7 +146,8 @@ async def update_complaint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] update_complaint failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.post("/{complaint_id}/resolve", response_model=ComplaintResponse)
@@ -163,7 +171,8 @@ async def resolve_complaint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] resolve_complaint failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.post("/{complaint_id}/escalate", response_model=ComplaintResponse)
@@ -181,7 +190,8 @@ async def escalate_complaint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] escalate_complaint failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # ===========================================================
@@ -199,7 +209,8 @@ async def get_my_complaints(
         complaints, total = await service.list_staff_complaints(skip, limit)
         return complaints, total
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] get_my_complaints failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # ===========================================================
@@ -227,7 +238,8 @@ async def assign_complaint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] assign_complaint failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.post("/{complaint_id}/reassign", response_model=ComplaintResponse)
@@ -249,7 +261,8 @@ async def reassign_complaint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] reassign_complaint failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.get("/me/assigned-to-me", response_model=tuple[List[ComplaintListResponse], int])
@@ -263,7 +276,8 @@ async def get_complaints_assigned_to_me(
         complaints, total = await service.list_assigned_complaints(skip, limit)
         return complaints, total
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] get_complaints_assigned_to_me failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # ===========================================================
@@ -285,7 +299,8 @@ async def add_comment(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] add_comment failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.get("/{complaint_id}/comments", response_model=List[ComplaintCommentResponse])
@@ -298,7 +313,8 @@ async def get_complaint_comments(
         comments = await service.get_comments(complaint_id)
         return comments
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] get_complaint_comments failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # ===========================================================
@@ -327,7 +343,8 @@ async def get_manager_dashboard(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] get_manager_dashboard failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.get("/dashboard/owner", response_model=OwnerDashboardData)
@@ -352,7 +369,8 @@ async def get_owner_dashboard(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] get_owner_dashboard failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.get("/dashboard/staff", response_model=StaffDashboardData)
@@ -373,7 +391,8 @@ async def get_staff_dashboard(
         dashboard = await service.get_staff_dashboard()
         return dashboard
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] get_staff_dashboard failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # ===========================================================
@@ -398,7 +417,8 @@ async def get_statistics(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid filter value: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] get_statistics failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # ===========================================================
@@ -454,7 +474,8 @@ async def bulk_action(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] bulk_action failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # ===========================================================
@@ -484,7 +505,8 @@ async def export_complaints(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_safe_exception(logger, "[COMPLAINTS] export_complaints failed", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 # ===========================================================
