@@ -5,6 +5,7 @@ Full CRUD for SOP Categories, Items, Versions.
 Role-based visibility enforced (Staff sees only their department's SOPs).
 """
 
+import logging
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -20,12 +21,15 @@ from app.api.dependencies import get_current_user, require_permission, require_r
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import Employee, SOPCategory, SOPExecution, SOPItem, SOPVersion
+from app.utils.safe_errors import log_safe_exception
 from app.schemas.schemas import (
     SOPCategoryCreate, SOPCategoryResponse,
     SOPCreate, SOPResponse, SOPUpdate,
     SOPVersionCreate, SOPVersionResponse,
     SOPExecutionResponse,
 )
+
+logger = logging.getLogger("skitech")
 
 router = APIRouter(prefix="/sop", tags=["SOP"])
 
@@ -137,7 +141,8 @@ async def create_sop(
         raise
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SOP] create_sop failed", e)
+        raise HTTPException(status_code=400, detail="Could not create the SOP.")
 
 
 @router.get("/items/{property_id}", response_model=List[SOPResponse])
