@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.router import router as v1_router
 from app.core.config import settings
 from app.core.database import close_db, init_db
+from app.utils.safe_errors import safe_error_summary
 from app.middleware.middleware import (
     AuditMiddleware,
     ErrorHandlerMiddleware,
@@ -93,7 +94,8 @@ async def health_check():
             await conn.execute(text("SELECT 1"))
     except Exception as e:
         db_status = "error"
-        db_error = f"{type(e).__name__}: {str(e)}"
+        # Public endpoint: str(e) of a connection error can name the DB host.
+        db_error = safe_error_summary(e)
     return {
         "status": "ok" if db_status == "ok" else "degraded",
         "app": settings.APP_NAME,
