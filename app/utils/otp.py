@@ -9,6 +9,7 @@ import logging
 import random
 
 from app.core.config import settings
+from app.utils.safe_errors import log_safe_exception
 
 logger = logging.getLogger("skitech")
 
@@ -37,7 +38,8 @@ def _send_email(to: str, subject: str, html: str) -> bool:
         logger.info(f"[SendGrid] ✅ Email sent to {to} — status: {response.status_code}")
         return True
     except Exception as e:
-        logger.error(f"[SendGrid] ❌ Failed to send to {to}: {type(e).__name__}: {e}", exc_info=True)
+        # str(e) and exc_info can carry the recipient and SendGrid's response body.
+        log_safe_exception(logger, "[SendGrid] ❌ Failed to send email", e)
         return False
 
 
