@@ -8,8 +8,10 @@ from app.utils.safe_errors import safe_error_summary
 # Cloudbeds API reference (developers.cloudbeds.com/reference):
 #   getReservations                -> get_getreservations-2
 #   getReservationsWithRateDetails -> get_getreservationswithratedetails-2
+#   getRooms                       -> get_getrooms-2
 PAGE_SIZE = 100        # pageSize: "Results page size. Max = 100"
 RATE_ID_BATCH = 100    # reservationID is "comma-separated"; no max documented
+MAX_ROOM_PAGES = 100   # getRooms documents no page-size max; bound the walk
 
 # Reservation status enum: not_confirmed, confirmed, canceled, checked_in,
 # checked_out, no_show. Note "canceled" with one L.
@@ -34,6 +36,8 @@ def _parse_created(value: Optional[str]) -> Optional[datetime]:
 
 
 class CloudbedsAdapter(BaseAdapter):
+
+    supports_room_sync = True
 
     def __init__(self, transport: Optional[httpx.AsyncBaseTransport] = None):
         # transport is injectable so tests can serve stored fixtures
@@ -204,6 +208,55 @@ class CloudbedsAdapter(BaseAdapter):
             if len(page) < PAGE_SIZE or (total is not None and len(items) >= int(total)):
                 return items
             page_number += 1
+
+    async def fetch_rooms(self, credentials: Dict[str, Any]) -> List[Dict[str, Any]]:
+        api_key = credentials.get("api_key")
+        property_id = credentials.get("property_id")
+        # Mock credentials must not create rooms in a real property.
+        if api_key == "mock_cloudbeds_key" or (api_key and api_key.startswith("mock")):
+            return []
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "X-Property-Id": str(property_id)
+        }
+        try:
+            # getRooms returns data[] per property with the rooms nested inside,
+            # so pages are counted in rooms, not in data items. Rooms are keyed
+            # by roomID so a repeated page cannot double-count.
+            rooms: Dict[str, Dict[str, Any]] = {}
+            async with httpx.AsyncClient(transport=self._transport, timeout=15.0) as client:
+                for page_number in range(1, MAX_ROOM_PAGES + 1):
+                    res = await client.get(
+                        f"{self._get_base_url()}/getRooms",
+                        params={"propertyIDs": str(property_id), "pageSize": PAGE_SIZE, "pageNumber": page_number},
+                        headers=headers,
+                    )
+                    if res.status_code != 200:
+                        raise Exception(f"Cloudbeds /getRooms failed: {res.reason_phrase}")
+                    json_data = res.json()
+                    if json_data.get("success") is False:
+                        raise Exception(f"Cloudbeds /getRooms failed: {json_data.get('message')}")
+                    page = [room for prop in json_data.get("data") or [] for room in prop.get("rooms") or []]
+                    for room in page:
+                        if room.get("roomID"):
+                            rooms[str(room["roomID"])] = room
+                    total = json_data.get("total")
+                    if len(page) < PAGE_SIZE or (total is not None and len(rooms) >= int(total)):
+                        break
+
+            return [
+                {
+                    "external_id": room_id,
+                    "room_number": room.get("roomName"),
+                    "room_type": room.get("roomTypeName"),
+                }
+                for room_id, room in rooms.items()
+                if not room.get("isVirtual")
+            ]
+        except Exception as e:
+            print(f"Error fetching Cloudbeds rooms: {safe_error_summary(e)}")
+            raise e
 
     async def fetch_availability(
         self,

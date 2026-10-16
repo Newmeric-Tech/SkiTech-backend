@@ -1,0 +1,28 @@
+{
+  "_source": "Shaped from the Service object of https://docs.mews.com/connector-api/operations/services#get-all-services (ServiceType Bookable)",
+  "Services": [
+    {
+      "Id": "bd26d8db-86da-4f96-9efc-e5a4654a4a94",
+      "EnterpriseId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "IsActive": true,
+      "Names": {"en-US": "Accommodation"},
+      "Options": {"BillAsPackage": false},
+      "Ordering": 0,
+      "Data": {"Discriminator": "Bookable", "Value": {}},
+      "CreatedUtc": "2022-01-01T00:00:00Z",
+      "UpdatedUtc": "2023-01-01T00:00:00Z"
+    },
+    {
+      "Id": "0b8e1b6c-2c1e-4d7c-9a54-5d4a3b2c1d0e",
+      "EnterpriseId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "IsActive": false,
+      "Names": {"en-US": "Retired service"},
+      "Options": {"BillAsPackage": false},
+      "Ordering": 1,
+      "Data": {"Discriminator": "Bookable", "Value": {}},
+      "CreatedUtc": "2022-01-01T00:00:00Z",
+      "UpdatedUtc": "2023-01-01T00:00:00Z"
+    }
+  ],
+  "Cursor": null
+}

@@ -1,0 +1,22 @@
+{
+  "_source": "Shaped from the GetRoomsResponse schema of https://developers.cloudbeds.com/reference/get_getrooms-2",
+  "success": true,
+  "data": [
+    {
+      "propertyID": "173",
+      "rooms": [
+        {"roomID": "r-101", "roomName": "101", "dormRoomName": "", "roomDescription": "", "maxGuests": 2,
+         "isPrivate": true, "isVirtual": false, "roomBlocked": false,
+         "roomTypeID": "rt-1", "roomTypeName": "Queen Deluxe", "roomTypeNameShort": "QD", "doorlockID": ""},
+        {"roomID": "r-102", "roomName": " 102 ", "dormRoomName": "", "roomDescription": "", "maxGuests": 2,
+         "isPrivate": true, "isVirtual": false, "roomBlocked": true,
+         "roomTypeID": "rt-1", "roomTypeName": "Queen Deluxe", "roomTypeNameShort": "QD", "doorlockID": ""},
+        {"roomID": "r-v1", "roomName": "Virtual Suite", "dormRoomName": "", "roomDescription": "", "maxGuests": 4,
+         "isPrivate": true, "isVirtual": true, "roomBlocked": false,
+         "roomTypeID": "rt-2", "roomTypeName": "Suite", "roomTypeNameShort": "STE", "doorlockID": ""}
+      ]
+    }
+  ],
+  "count": 1,
+  "total": 3
+}

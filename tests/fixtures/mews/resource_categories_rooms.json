@@ -1,0 +1,32 @@
+{
+  "_source": "Shaped from the Resource category object of https://docs.mews.com/connector-api/operations/resourcecategories#get-all-resource-categories; Type values from operations/restrictions (Resource category type)",
+  "ResourceCategories": [
+    {
+      "Id": "773d5e42-de1e-43a0-9ce6-f940faf2303f",
+      "EnterpriseId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "ServiceId": "bd26d8db-86da-4f96-9efc-e5a4654a4a94",
+      "IsActive": true,
+      "Type": "Room",
+      "Names": {"de-DE": "Doppelzimmer", "en-US": "Double Room"},
+      "ShortNames": {"en-US": "DBL"},
+      "Descriptions": {},
+      "Ordering": 1,
+      "Capacity": 2,
+      "ExtraCapacity": 1
+    },
+    {
+      "Id": "5a1f0c3e-7b2d-4e8f-9a6b-1c2d3e4f5a6b",
+      "EnterpriseId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "ServiceId": "bd26d8db-86da-4f96-9efc-e5a4654a4a94",
+      "IsActive": true,
+      "Type": "ParkingSpot",
+      "Names": {"en-US": "Parking"},
+      "ShortNames": {"en-US": "PRK"},
+      "Descriptions": {},
+      "Ordering": 2,
+      "Capacity": 1,
+      "ExtraCapacity": 0
+    }
+  ],
+  "Cursor": null
+}

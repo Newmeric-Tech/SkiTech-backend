@@ -2,7 +2,18 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 
 class BaseAdapter(ABC):
-    
+
+    # Room import is implemented only for providers whose API exposes the
+    # physical room list (Mews, Cloudbeds). Others keep rooms manual.
+    supports_room_sync = False
+
+    async def fetch_rooms(self, credentials: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Fetch the property's physical rooms.
+        Returns a list of {"external_id": str, "room_number": str, "room_type": str | None}.
+        """
+        raise NotImplementedError("Room sync is not supported for this provider.")
+
     @abstractmethod
     async def test_connection(self, credentials: Dict[str, Any]) -> Dict[str, Any]:
         """

@@ -1,0 +1,30 @@
+{
+  "_source": "Shaped from the Resource category assignment object of https://docs.mews.com/connector-api/operations/resourcecategories#get-all-resource-category-assignments",
+  "ResourceCategoryAssignments": [
+    {
+      "Id": "a1000000-0000-0000-0000-000000000001",
+      "IsActive": true,
+      "ResourceId": "20e00c32-d561-4008-8609-82d8aa525714",
+      "CategoryId": "773d5e42-de1e-43a0-9ce6-f940faf2303f",
+      "CreatedUtc": "2022-01-01T00:00:00Z",
+      "UpdatedUtc": "2023-01-01T00:00:00Z"
+    },
+    {
+      "Id": "a1000000-0000-0000-0000-000000000002",
+      "IsActive": true,
+      "ResourceId": "1ec29188-01ca-4294-9983-fac59f85a448",
+      "CategoryId": "773d5e42-de1e-43a0-9ce6-f940faf2303f",
+      "CreatedUtc": "2022-01-01T00:00:00Z",
+      "UpdatedUtc": "2023-01-01T00:00:00Z"
+    },
+    {
+      "Id": "a1000000-0000-0000-0000-000000000003",
+      "IsActive": false,
+      "ResourceId": "9f9f9f9f-0000-0000-0000-000000000003",
+      "CategoryId": "773d5e42-de1e-43a0-9ce6-f940faf2303f",
+      "CreatedUtc": "2022-01-01T00:00:00Z",
+      "UpdatedUtc": "2023-01-01T00:00:00Z"
+    }
+  ],
+  "Cursor": null
+}

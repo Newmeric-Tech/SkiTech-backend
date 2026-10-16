@@ -12,6 +12,8 @@ from app.utils.safe_errors import safe_error_summary
 #   order items   -> operations/orderitems#get-all-order-items
 #   categories    -> operations/resourcecategories#get-all-resource-categories
 #   age categories-> operations/agecategories#get-all-age-categories
+#   services      -> operations/services#get-all-services (ServiceType Bookable)
+#   assignments   -> operations/resourcecategories#get-all-resource-category-assignments
 #   paging        -> guidelines/pagination (Limitation.Count max 1000, Cursor)
 #   intervals     -> operations/_objects#time-interval (StartUtc inclusive, EndUtc exclusive)
 
@@ -31,6 +33,11 @@ _STATE_TO_STATUS = {
 
 # Resource state (resources doc) values that make a resource unsellable.
 _UNAVAILABLE_RESOURCE_STATES = {"OutOfService", "OutOfOrder"}
+
+# Resource category types (restrictions doc, "Resource category type") that
+# are a lettable unit housekeeping would service. Bed is excluded because it
+# sits inside a Dorm; meeting space, parking, equipment etc. are not rooms.
+_ROOM_CATEGORY_TYPES = {"Room", "Suite", "Apartment", "Villa", "Cabin", "Dorm"}
 
 
 def _parse_utc(value: str) -> datetime:
@@ -54,6 +61,8 @@ def _chunks(items: List[str], size: int = MAX_IDS) -> List[List[str]]:
 
 
 class MewsAdapter(BaseAdapter):
+
+    supports_room_sync = True
 
     def __init__(self, transport: Optional[httpx.AsyncBaseTransport] = None):
         # transport is injectable so tests can serve stored fixtures
@@ -289,6 +298,62 @@ class MewsAdapter(BaseAdapter):
                 seen[r["Id"]] = r
             start = window_end
         return list(seen.values())
+
+    async def fetch_rooms(self, credentials: Dict[str, Any]) -> List[Dict[str, Any]]:
+        client_token = credentials.get("client_token")
+        # Mock credentials must not create rooms in a real property.
+        if client_token == "mock_client_token" or (client_token and client_token.startswith("mock")):
+            return []
+
+        auth = self._auth(credentials)
+        try:
+            async with self._client(timeout=15.0) as client:
+                services = await self._get_all(client, "/api/connector/v1/services/getAll",
+                                               {**auth, "ServiceType": "Bookable"}, "Services")
+                service_ids = [s["Id"] for s in services if s.get("IsActive", True)]
+                if not service_ids:
+                    return []
+
+                categories: Dict[str, Dict[str, Any]] = {}
+                for ids in _chunks(service_ids):
+                    for c in await self._get_all(client, "/api/connector/v1/resourceCategories/getAll",
+                                                 {**auth, "ServiceIds": ids}, "ResourceCategories"):
+                        if c.get("IsActive", True) and c.get("Type") in _ROOM_CATEGORY_TYPES:
+                            categories[c["Id"]] = c
+                if not categories:
+                    return []
+
+                resource_category: Dict[str, str] = {}
+                for ids in _chunks(sorted(categories)):
+                    for a in await self._get_all(client, "/api/connector/v1/resourceCategoryAssignments/getAll",
+                                                 {**auth, "ResourceCategoryIds": ids}, "ResourceCategoryAssignments"):
+                        if a.get("IsActive", True):
+                            resource_category[a["ResourceId"]] = a["CategoryId"]
+                if not resource_category:
+                    return []
+
+                resources: List[Dict[str, Any]] = []
+                for ids in _chunks(sorted(resource_category)):
+                    resources.extend(await self._get_all(
+                        client, "/api/connector/v1/resources/getAll",
+                        {**auth, "ResourceIds": ids, "Extent": {"Resources": True, "Inactive": False}},
+                        "Resources",
+                    ))
+
+            rooms = []
+            for resource in resources:
+                if not resource.get("IsActive", True) or resource.get("DeletedUtc"):
+                    continue
+                category = categories.get(resource_category.get(resource["Id"]), {})
+                rooms.append({
+                    "external_id": str(resource["Id"]),
+                    "room_number": resource.get("Name"),
+                    "room_type": _localized(category.get("Names")),
+                })
+            return rooms
+        except Exception as e:
+            print(f"Error fetching Mews rooms: {safe_error_summary(e)}")
+            raise e
 
     async def fetch_availability(
         self,
