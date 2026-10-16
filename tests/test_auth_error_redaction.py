@@ -68,6 +68,18 @@ def _register_data():
     return RegisterRequest(email=USER_EMAIL, password=PASSWORD, role="Staff", tenant_id=uuid4())
 
 
+async def test_register_integrity_error_is_generic(caplog):
+    db = RegisterSession(commit_error=_realistic_integrity_error({"email": USER_EMAIL, "password_hash": "x"}))
+    with caplog.at_level(logging.ERROR, logger="skitech"):
+        with pytest.raises(HTTPException) as info:
+            await auth.register(_register_data(), db=db)
+    assert (info.value.status_code, info.value.detail) == (400, "Registration failed.")
+    logs = _logs(caplog)
+    assert "[REGISTER ERROR] commit failed: Database error: NotNullViolationError" in logs
+    _assert_clean(logs)
+    _assert_clean(info.value.detail)
+
+
 async def test_register_duplicate_still_reported():
     orig = Exception('duplicate key value violates unique constraint "users_email_key"\n'
                      f"DETAIL:  Key (email)=({USER_EMAIL}) already exists.")

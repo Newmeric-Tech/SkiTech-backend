@@ -85,10 +85,14 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
             await db.commit()
         except IntegrityError as e:
             await db.rollback()
+            # Matched on only, never returned: str(e) carries the SQL and
+            # the failing row (email, password hash).
             error_msg = str(e).lower()
             if "duplicate key" in error_msg or "unique constraint" in error_msg:
                 raise HTTPException(status_code=400, detail="Email already registered")
-            raise HTTPException(status_code=400, detail=f"Database error: {error_msg[:100]}")
+            import logging
+            log_safe_exception(logging.getLogger("skitech"), "[REGISTER ERROR] commit failed", e)
+            raise HTTPException(status_code=400, detail="Registration failed.")
 
         # Generate OTP, persist to DB, then send verification email
         otp = generate_otp()
