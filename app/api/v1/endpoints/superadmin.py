@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_roles
 from app.core.database import get_db
+from app.utils.safe_errors import log_safe_exception
 from app.models.models import (
     AuditLog, DemoRequest, Property, Role, RolePermission, Tenant, User,
     SubscriptionPlan, TenantSubscription,
@@ -807,11 +808,8 @@ async def delete_user(
         return {"success": True, "message": "User deleted"}
     except Exception as e:
         await db.rollback()
-        logger.error(f"[DELETE USER] {type(e).__name__}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to delete user: {type(e).__name__}: {str(e)[:300]}",
-        )
+        log_safe_exception(logger, "[DELETE USER] failed", e)
+        raise HTTPException(status_code=500, detail="Failed to delete user.")
 
 
 @router.put("/users/{user_id}/role")
@@ -921,8 +919,8 @@ async def delete_tenant(
         raise
     except Exception as e:
         await db.rollback()
-        logger.error(f"Failed to delete tenant {tenant_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+        log_safe_exception(logger, f"Failed to delete tenant {tenant_id}", e)
+        raise HTTPException(status_code=500, detail="Delete failed.")
 
 
 @router.get("/subscriptions")
