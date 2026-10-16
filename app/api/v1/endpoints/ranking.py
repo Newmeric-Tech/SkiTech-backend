@@ -4,6 +4,7 @@ Ranking System API Endpoints - app/api/v1/endpoints/ranking.py
 REST API endpoints for Employee Ranking System.
 """
 
+import logging
 from datetime import datetime, timedelta
 from typing import List
 from uuid import UUID
@@ -25,8 +26,11 @@ from app.schemas.ranking_schemas import (
     RankingType
 )
 from app.services.ranking_service import RankingService
-from app.utils.exceptions import AccessDenied, NotFound, ValidationError
+from app.utils.exceptions import AccessDenied, NotFound, SkiTechException, ValidationError
+from app.utils.safe_errors import log_safe_exception
 
+
+logger = logging.getLogger("skitech")
 
 router = APIRouter(prefix="/rankings", tags=["rankings"])
 
@@ -69,8 +73,12 @@ async def get_my_ranking(
         return ranking
     except NotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        log_safe_exception(logger, "[RANKING] get_my_ranking failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 # ===========================================================
@@ -113,11 +121,12 @@ async def initialize_ranking_criteria(
             "message": f"Initialized {len(criteria_list)} criteria",
             "criteria_count": len(criteria_list)
         }
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] initialize_ranking_criteria failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 # ===========================================================
@@ -156,12 +165,14 @@ async def create_ranking_criterion(
         
         await session.commit()
         return criteria
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
         await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] create_ranking_criterion failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 @router.get(
@@ -184,11 +195,12 @@ async def list_ranking_criteria(
         criteria_list = await repo.get_criteria_by_property(property_id)
         
         return criteria_list
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] list_ranking_criteria failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 # ===========================================================
@@ -245,12 +257,14 @@ async def record_employee_score(
         
         await session.commit()
         return score
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
         await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] record_employee_score failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 @router.get(
@@ -280,11 +294,12 @@ async def get_employee_scores(
         )
         
         return scores
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] get_employee_scores failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 # ===========================================================
@@ -336,11 +351,12 @@ async def get_property_rankings(
             period_end=datetime.now(),
             property_name="Property"  # TODO: Get property name
         )
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] get_property_rankings failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 @router.get(
@@ -375,11 +391,12 @@ async def get_employee_ranking(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] get_employee_ranking failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 @router.get(
@@ -421,11 +438,12 @@ async def get_performance_portal(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] get_performance_portal failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 # ===========================================================
@@ -466,11 +484,12 @@ async def get_dashboard_stats(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] get_dashboard_stats failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
 
 
 # ===========================================================
@@ -518,8 +537,9 @@ async def recalculate_rankings(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+    except SkiTechException as e:
+        # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        log_safe_exception(logger, "[RANKING] recalculate_rankings failed", e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not complete the ranking request.")
