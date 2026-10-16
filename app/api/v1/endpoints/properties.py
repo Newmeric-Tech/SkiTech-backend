@@ -297,10 +297,16 @@ async def upload_property_image(
             logger.info("Property image uploaded to S3: %s", object_key)
             return {"url": url, "storage": "s3"}
         except ClientError as exc:
-            logger.error("S3 upload failed for property %s: %s", property_id, exc)
+            # S3's message can name the bucket/key; log the error code instead.
+            log_safe_exception(
+                logger,
+                f"S3 upload failed for property {property_id} "
+                f"(code={exc.response.get('Error', {}).get('Code')})",
+                exc,
+            )
             raise HTTPException(
                 status_code=502,
-                detail=f"Image storage unavailable: {exc.response['Error']['Message']}",
+                detail="Image storage unavailable. Please try again.",
             )
         except Exception as exc:
             logger.error("Unexpected S3 error for property %s: %s", property_id, exc)

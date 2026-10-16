@@ -57,6 +57,34 @@ async def test_property_upload_url_s3_error_is_generic(s3_configured, monkeypatc
     _assert_clean(caplog, info)
 
 
+async def test_property_image_upload_s3_error_is_generic(s3_configured, monkeypatch, caplog):
+    class PutFailsS3:
+        def put_object(self, **kwargs):
+            raise ClientError({"Error": {"Code": "NoSuchBucket", "Message": f"Bucket {SECRET} missing"}},
+                              "PutObject")
+
+    class Upload:
+        content_type = "image/png"
+        filename = "a.png"
+
+        async def read(self):
+            return b"png"
+
+    async def found(*args):
+        return None
+    monkeypatch.setattr(properties, "_get_property_or_404", found)
+    monkeypatch.setattr(properties, "_get_s3_client", lambda: PutFailsS3())
+    property_id = uuid4()
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(HTTPException) as info:
+            await properties.upload_property_image(property_id, file=Upload(), db=None,
+                                                   user={"tenant_id": str(uuid4())})
+    assert (info.value.status_code, info.value.detail) == (502, "Image storage unavailable. Please try again.")
+    logs = _logs(caplog)
+    assert f"S3 upload failed for property {property_id} (code=NoSuchBucket)" in logs
+    _assert_clean(caplog, info)
+
+
 def test_sop_upload_url_s3_error_is_generic(s3_configured, caplog):
     with caplog.at_level(logging.ERROR):
         with pytest.raises(HTTPException) as info:
