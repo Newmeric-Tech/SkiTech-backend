@@ -2,6 +2,7 @@
 Employee Scheduling Endpoints - app/api/v1/endpoints/scheduling.py
 """
 
+import logging
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -24,6 +25,9 @@ from app.schemas.scheduling import (
     BulkScheduleAssignmentRequest
 )
 from app.services.scheduling_service import SchedulingService
+from app.utils.safe_errors import log_safe_exception
+
+logger = logging.getLogger("skitech")
 
 
 router = APIRouter(prefix="/scheduling", tags=["Scheduling"])
@@ -70,7 +74,8 @@ async def create_availability(
         return availability
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] create_availability failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 @router.post("/availability/bulk")
@@ -97,7 +102,8 @@ async def bulk_create_availability(
         }
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] bulk_create_availability failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -118,7 +124,8 @@ async def create_schedule(
         return schedule
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] create_schedule failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 @router.post("/schedules/bulk", response_model=dict)
@@ -143,7 +150,8 @@ async def bulk_create_schedules(
         }
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] bulk_create_schedules failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 @router.get("/schedules", response_model=list[WeeklyScheduleResponse])
@@ -188,7 +196,8 @@ async def publish_schedule(
         return {"status": "published", "schedule_id": schedule_id}
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] publish_schedule failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -213,7 +222,8 @@ async def create_shift(
         return shift
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] create_shift failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -259,7 +269,8 @@ async def create_replacement_request(
         return request
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] create_replacement_request failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 @router.get("/replacement-requests", response_model=list[ReplacementRequestResponse])
@@ -301,7 +312,8 @@ async def accept_replacement(
         return request
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] accept_replacement failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 @router.post("/replacement-requests/{request_id}/reject", response_model=ReplacementRequestResponse)
@@ -322,7 +334,8 @@ async def reject_replacement(
         return request
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] reject_replacement failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 @router.post("/replacement-requests/{request_id}/assign", response_model=ReplacementRequestResponse)
@@ -342,7 +355,8 @@ async def direct_assign_replacement(
         return request
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] direct_assign_replacement failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -371,7 +385,8 @@ async def get_recommendations(
         )
         return recommendations
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] get_recommendations failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -395,7 +410,8 @@ async def get_manager_dashboard(
         data = await service.get_manager_dashboard_data(week_start, week_end)
         return data
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] get_manager_dashboard failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 @router.get("/dashboard/staff", response_model=StaffDashboardData)
@@ -408,7 +424,8 @@ async def get_staff_dashboard(
         data = await service.get_staff_dashboard_data(UUID(employee_id))
         return data
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] get_staff_dashboard failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 @router.get("/me", response_model=StaffDashboardData)
@@ -441,7 +458,8 @@ async def get_my_schedule(
         data = await service.get_staff_dashboard_data(employee.id)
         return data
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] get_my_schedule failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -470,4 +488,5 @@ async def submit_shift_response(
         }
         return response
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_safe_exception(logger, "[SCHEDULING] submit_shift_response failed", e)
+        raise HTTPException(status_code=400, detail="Could not complete the scheduling request.")
