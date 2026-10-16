@@ -18,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from app.utils.exceptions import SkiTechException
+from app.utils.safe_errors import log_safe_exception, safe_error_summary
 
 logger = logging.getLogger("skitech")
 
@@ -40,7 +41,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception as exc:
-            logger.error(f"Unhandled: {exc}")
+            # str(exc) of a DB error carries bound parameters (guest data).
+            logger.error(f"Unhandled: {safe_error_summary(exc)}")
             raise
 
         elapsed = round((time.time() - start) * 1000, 2)
@@ -62,7 +64,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 content={"error": exc.error_code, "detail": exc.message},
             )
         except Exception as exc:
-            logger.error(f"Unhandled exception: {exc}", exc_info=True)
+            log_safe_exception(logger, "Unhandled exception", exc)
             return JSONResponse(
                 status_code=500,
                 content={"error": "INTERNAL_SERVER_ERROR", "detail": "An unexpected error occurred"},
@@ -131,7 +133,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     db.add(log)
                     await db.commit()
             except Exception as e:
-                logger.warning(f"[AUDIT ERROR] {e}")
+                # A failed audit insert would echo user_email / IP in its parameters.
+                logger.warning(f"[AUDIT ERROR] {safe_error_summary(e)}")
 
         return response
 

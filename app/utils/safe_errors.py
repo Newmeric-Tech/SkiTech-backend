@@ -5,8 +5,11 @@ str() of a SQLAlchemy error carries the SQL statement, its bound parameters
 and Postgres' DETAIL line ("Failing row contains (...)"), so on the
 channel-manager sync path it would leak guest names, emails and phones into
 integrations.error_message, sync_logs.error_message and the logs.
-safe_error_summary() keeps only what is safe to store and print.
+safe_error_summary() keeps only what is safe to store and print, and
+log_safe_exception() is the logging counterpart for exc_info-style logs.
 """
+import logging
+import traceback
 from typing import Optional
 
 import httpx
@@ -56,3 +59,20 @@ def safe_error_summary(err: BaseException) -> str:
             return f"{type(err).__name__}: {lines[0].strip()}"[:MAX_SUMMARY]
 
     return type(err).__name__
+
+
+def log_safe_exception(
+    logger: logging.Logger, message: str, err: BaseException, level: int = logging.ERROR
+) -> None:
+    """Log `message`, the safe summary and the stack frames of `err`.
+
+    Replaces logger.error(f"...{err}", exc_info=True): exc_info renders str()
+    of the exception and of every chained cause, which for a database error
+    includes the bound parameters and the failing row. The frames below are
+    file/line/function plus the source line, never runtime values.
+    """
+    frames = "".join(traceback.format_tb(err.__traceback__)) if err.__traceback__ else ""
+    text = f"{message}: {safe_error_summary(err)}"
+    if frames:
+        text += f"\nTraceback (most recent call last, message omitted):\n{frames.rstrip()}"
+    logger.log(level, text)

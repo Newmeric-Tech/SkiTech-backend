@@ -1,10 +1,14 @@
 import json
+import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_db
 from app.utils.crypto import decrypt
+from app.utils.safe_errors import safe_error_summary
+
+logger = logging.getLogger("skitech")
 
 router = APIRouter()
 
@@ -149,32 +153,46 @@ async def little_hotelier_webhook(
             synced_at = NOW()
     """)
     
-    await db.execute(save_query, {
-        "tenant_id": matching_integration.tenant_id,
-        "property_id": matching_integration.property_id,
-        "integration_id": matching_integration.id,
-        "external_id": external_id,
-        "status": status_str,
-        "guest_name": guest_name,
-        "guest_email": guest_email,
-        "guest_phone": guest_phone,
-        "room_number": room_number,
-        "room_type": room_type,
-        "check_in_date": check_in,
-        "check_out_date": check_out,
-        "num_nights": num_nights,
-        "num_adults": num_adults,
-        "num_children": num_children,
-        "total_amount": total_amount,
-        "currency": currency,
-        "special_requests": hotel_reservation.get("Comments")
-    })
-    
-    # Update last sync time
-    update_sync_query = text("UPDATE integrations SET last_sync_at = NOW() WHERE id = :id")
-    await db.execute(update_sync_query, {"id": matching_integration.id})
-    await db.commit()
-    
+    try:
+        await db.execute(save_query, {
+            "tenant_id": matching_integration.tenant_id,
+            "property_id": matching_integration.property_id,
+            "integration_id": matching_integration.id,
+            "external_id": external_id,
+            "status": status_str,
+            "guest_name": guest_name,
+            "guest_email": guest_email,
+            "guest_phone": guest_phone,
+            "room_number": room_number,
+            "room_type": room_type,
+            "check_in_date": check_in,
+            "check_out_date": check_out,
+            "num_nights": num_nights,
+            "num_adults": num_adults,
+            "num_children": num_children,
+            "total_amount": total_amount,
+            "currency": currency,
+            "special_requests": hotel_reservation.get("Comments")
+        })
+
+        # Update last sync time
+        update_sync_query = text("UPDATE integrations SET last_sync_at = NOW() WHERE id = :id")
+        await db.execute(update_sync_query, {"id": matching_integration.id})
+        await db.commit()
+    except Exception as err:
+        # str(err) of a DB error carries the bound guest name/email/phone;
+        # log the sanitized summary only and keep the raw error out of the
+        # middleware's unhandled-exception path.
+        await db.rollback()
+        logger.error(
+            f"Little Hotelier webhook: failed to store reservation for integration "
+            f"{matching_integration.id}: {safe_error_summary(err)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to store reservation."
+        )
+
     # Return standard response payload
     return {
         "OTA_HotelResNotifRS": {

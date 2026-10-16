@@ -46,6 +46,10 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_recycle=1800,
     connect_args=connect_args,
+    # Keep bound parameters (guest names, emails, phones, password hashes)
+    # out of str() of SQLAlchemy errors and out of echo logs. Postgres'
+    # own DETAIL text is not covered; see app/utils/safe_errors.py.
+    hide_parameters=True,
 )
 
 AsyncSessionLocal = sessionmaker(
