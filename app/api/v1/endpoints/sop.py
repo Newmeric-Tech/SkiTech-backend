@@ -398,6 +398,16 @@ async def pending_approvals(
     return [_with_sop_fields(exec_obj, sop) for exec_obj, sop in result.all()]
 
 
+async def _get_execution_or_404(db: AsyncSession, execution_id: UUID, user: dict) -> SOPExecution:
+    """The execution, or 404 if it is missing or belongs to another tenant
+    (for every role, so another tenant's ids are indistinguishable from
+    missing ones)."""
+    execution = await db.get(SOPExecution, execution_id)
+    if not execution or str(execution.tenant_id) != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Execution not found")
+    return execution
+
+
 @router.post("/executions/{execution_id}/approve")
 async def approve_execution(
     execution_id: UUID,
@@ -405,9 +415,7 @@ async def approve_execution(
     user: dict = Depends(require_permission("update_sop")),
 ):
     """Manager approves a proof submission. Marks execution + SOPItem as completed."""
-    execution = await db.get(SOPExecution, execution_id)
-    if not execution:
-        raise HTTPException(status_code=404, detail="Execution not found")
+    execution = await _get_execution_or_404(db, execution_id, user)
     if user.get("role") == "Manager":
         prop_id = user.get("property_id")
         if prop_id and str(execution.property_id) != prop_id:
@@ -432,9 +440,7 @@ async def reject_execution(
     user: dict = Depends(require_permission("update_sop")),
 ):
     """Manager rejects a proof submission. Staff can re-submit proof."""
-    execution = await db.get(SOPExecution, execution_id)
-    if not execution:
-        raise HTTPException(status_code=404, detail="Execution not found")
+    execution = await _get_execution_or_404(db, execution_id, user)
     if user.get("role") == "Manager":
         prop_id = user.get("property_id")
         if prop_id and str(execution.property_id) != prop_id:
