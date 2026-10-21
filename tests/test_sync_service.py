@@ -58,6 +58,7 @@ async def test_failed_upsert_rolls_back_before_marking_error(monkeypatch):
 
     await sync_service._run_single_integration_sync(db, integration)
 
-    # create_sync_log INSERT, failed reservation INSERT, rollback,
-    # then the error UPDATE on integrations and the sync_logs UPDATE.
-    assert db.calls == ["INSERT", "INSERT", "ROLLBACK", "UPDATE", "UPDATE"]
+    # create_sync_log's stale-run UPDATE and INSERT, failed reservation
+    # INSERT, rollback, then the error UPDATE on integrations and the
+    # sync_logs UPDATE.
+    assert db.calls == ["UPDATE", "INSERT", "INSERT", "ROLLBACK", "UPDATE", "UPDATE"]

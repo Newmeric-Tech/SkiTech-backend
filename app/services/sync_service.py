@@ -22,6 +22,20 @@ def add_days(date_str: str, days: int) -> str:
 
 
 async def create_sync_log(db: AsyncSession, integration_id: str) -> str:
+    # Close out this integration's runs that never finished (worker died
+    # mid-sync) so they don't stay 'syncing' forever.
+    await db.execute(text(f"""
+        UPDATE sync_logs
+        SET status = 'error', finished_at = NOW(), error_message = :message
+        WHERE integration_id = :integration_id
+          AND status = 'syncing'
+          AND finished_at IS NULL
+          AND started_at < NOW() - INTERVAL '{int(STALE_SYNC_MINUTES)} minutes'
+    """), {
+        "integration_id": integration_id,
+        "message": f"Sync interrupted: no result after {STALE_SYNC_MINUTES} minutes",
+    })
+
     query = text("""
         INSERT INTO sync_logs (integration_id, started_at, status)
         VALUES (:integration_id, NOW(), 'syncing')
