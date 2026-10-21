@@ -11,6 +11,10 @@ from app.utils.safe_errors import log_safe_exception, safe_error_summary
 
 logger = logging.getLogger(__name__)
 
+# A run still 'syncing' after this long is treated as interrupted (e.g. the
+# worker was restarted mid-sync and never wrote finished_at).
+STALE_SYNC_MINUTES = 15
+
 def add_days(date_str: str, days: int) -> str:
     date = datetime.strptime(date_str, "%Y-%m-%d")
     new_date = date + timedelta(days=days)

@@ -3,7 +3,7 @@ GET /properties/{property_id}/room-sync-status.
 
 Fake session only; nothing touches a real database.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -112,3 +112,21 @@ async def test_property_of_another_tenant_is_404():
 
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Property not found"
+
+
+def _syncing_run(minutes_ago):
+    started = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    return {"id": uuid4(), "started_at": started, "finished_at": None, "status": "syncing",
+            "error_message": None, "rooms_summary": None}
+
+
+async def test_run_stuck_syncing_over_15_minutes_is_reported_interrupted():
+    resp = await _get(FakeDB(integrations=[_integration("mews")], latest=_syncing_run(16)))
+
+    assert resp.json()["latest_sync"]["status"] == "interrupted"
+
+
+async def test_recent_syncing_run_is_still_syncing():
+    resp = await _get(FakeDB(integrations=[_integration("mews")], latest=_syncing_run(5)))
+
+    assert resp.json()["latest_sync"]["status"] == "syncing"

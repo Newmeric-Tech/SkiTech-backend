@@ -9,7 +9,7 @@ import asyncio
 import logging
 import shutil
 import uuid as uuid_lib
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List
 from uuid import UUID
@@ -25,6 +25,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import OwnerDetails, Property
 from app.services.adapters import get_adapter
+from app.services.sync_service import STALE_SYNC_MINUTES
 from app.utils.safe_errors import log_safe_exception
 from app.schemas.schemas import (
     OwnerDetailsCreate, OwnerDetailsResponse, OwnerDetailsUpdate,
@@ -330,6 +331,19 @@ async def upload_property_image(
 
 # ── Channel manager room sync status ─────────────────────
 
+def _run_status(run) -> str:
+    """The run's status, or 'interrupted' for a run stuck in 'syncing' with no
+    finished_at for longer than STALE_SYNC_MINUTES (so the page's Sync button
+    is not locked forever)."""
+    started = run["started_at"]
+    if run["status"] == "syncing" and run["finished_at"] is None and started is not None:
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - started > timedelta(minutes=STALE_SYNC_MINUTES):
+            return "interrupted"
+    return run["status"]
+
+
 def _supports_room_sync(provider_name: str) -> bool:
     try:
         return bool(get_adapter(provider_name).supports_room_sync)
@@ -388,7 +402,7 @@ async def get_room_sync_status(
             "id": str(latest["id"]),
             "started_at": latest["started_at"],
             "finished_at": latest["finished_at"],
-            "status": latest["status"],
+            "status": _run_status(latest),
             "error_message": latest["error_message"],
             "rooms_summary": latest["rooms_summary"],
         },
