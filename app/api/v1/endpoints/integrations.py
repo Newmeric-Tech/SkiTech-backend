@@ -132,7 +132,7 @@ async def create_integration(
     )
 
 
-@router.post("/integrations/test")
+@router.post("/integrations/test", dependencies=[Depends(require_roles(CONNECT_ROLES))])
 async def test_integration_connection(
     payload: TestConnectionRequest,
     current_user: User = Depends(get_current_user_obj)
@@ -150,7 +150,7 @@ async def test_integration_connection(
     return {"success": True, "message": result["message"]}
 
 
-@router.delete("/integrations/{integration_id}")
+@router.delete("/integrations/{integration_id}", dependencies=[Depends(require_roles(CONNECT_ROLES))])
 async def disconnect_integration(
     integration_id: UUID,
     db: AsyncSession = Depends(get_db),
