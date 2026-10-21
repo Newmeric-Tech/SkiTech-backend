@@ -237,7 +237,7 @@ class RankingService:
             period_end=period_end,
             ranking_type=ranking_type,
             overall_score=overall_score,
-            rank=0,  # Will be updated after all rankings
+            rank=1,  # Provisional (check_rank requires rank >= 1); recalculate_property_rankings sets the real rank
             total_active_employees=0,  # Will be updated
             scores_breakdown=scores_breakdown,
             performance_status=performance_status,

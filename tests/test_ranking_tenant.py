@@ -237,9 +237,8 @@ async def test_initialize_refuses_other_tenants_property_own_works(env):
 async def test_recalculate_refuses_other_tenants_property_own_works(env, monkeypatch):
     db, s, ids = env
     request = SimpleNamespace(period_start=START, period_end=END, ranking_type="weekly")
-    # calculate_employee_ranking inserts rank=0, which the check_rank constraint
-    # (rank >= 1) rejects for every tenant (pre-existing, out of scope), so record
-    # which employees the recalculation picks instead of running it.
+    # Only tenant scoping is under test here (the calculation itself is covered
+    # by test_ranking_recalculate.py), so record which employees get picked.
     picked = []
 
     async def record(self, tenant_id, employee_id, **kwargs):
