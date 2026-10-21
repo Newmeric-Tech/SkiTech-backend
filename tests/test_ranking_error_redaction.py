@@ -1,8 +1,8 @@
 """
 ranking.py broad `except Exception` handlers: unexpected errors keep their
 400 but answer a generic detail and log only the sanitized summary, while
-deliberate app errors (AccessDenied, NotFound) still reach the user with their
-own message and status. Handlers are called directly with fakes; nothing
+NotFound (including a request tenant_id that isn't the caller's) is a 404
+with its own message. Handlers are called directly with fakes; nothing
 touches a database.
 """
 import logging
@@ -59,19 +59,17 @@ async def test_db_error_is_generic_400(monkeypatch, caplog):
         assert value not in logs
 
 
-async def test_access_denied_message_preserved():
+async def test_tenant_mismatch_is_404():
     with pytest.raises(HTTPException) as info:
         await _rankings(user_tenant=uuid4())
-    assert (info.value.status_code, info.value.detail) == (400, "Not authorized")
+    assert (info.value.status_code, info.value.detail) == (404, "Tenant not found")
 
 
-async def test_service_not_found_message_preserved(monkeypatch):
-    # get_property_rankings has no NotFound handler: before and after, a
-    # service NotFound reaches the user as a 400 with its own message.
+async def test_service_not_found_is_404_with_its_message(monkeypatch):
     monkeypatch.setattr(ranking, "RankingService", _service_raising(NotFound("Property x")))
     with pytest.raises(HTTPException) as info:
         await _rankings()
-    assert (info.value.status_code, info.value.detail) == (400, "Property x not found")
+    assert (info.value.status_code, info.value.detail) == (404, "Property x not found")
 
 
 async def test_rollbacks_kept_on_both_paths(monkeypatch):
@@ -99,7 +97,7 @@ async def test_rollbacks_kept_on_both_paths(monkeypatch):
     with pytest.raises(HTTPException) as info:
         await ranking.create_ranking_criterion(tenant_id=TENANT, property_id=uuid4(), request=request,
                                                current_user=SimpleNamespace(tenant_id=uuid4()), session=denied)
-    assert (info.value.status_code, info.value.detail, denied.rollbacks) == (400, "Not authorized", 1)
+    assert (info.value.status_code, info.value.detail, denied.rollbacks) == (404, "Tenant not found", 1)
 
     failed = Session()
     with pytest.raises(HTTPException) as info:

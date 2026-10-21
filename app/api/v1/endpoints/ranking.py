@@ -26,13 +26,21 @@ from app.schemas.ranking_schemas import (
     RankingType
 )
 from app.services.ranking_service import RankingService
-from app.utils.exceptions import AccessDenied, NotFound, SkiTechException, ValidationError
+from app.utils.exceptions import NotFound, SkiTechException, ValidationError
 from app.utils.safe_errors import log_safe_exception
 
 
 logger = logging.getLogger("skitech")
 
 router = APIRouter(prefix="/rankings", tags=["rankings"])
+
+
+def _check_tenant_param(current_user: User, tenant_id: UUID) -> None:
+    """The request's tenant_id is kept for the frontend contract but never
+    trusted: every query uses current_user.tenant_id, and a mismatch is
+    answered like a missing resource (404)."""
+    if current_user.tenant_id != tenant_id:
+        raise NotFound("Tenant")
 
 
 # ===========================================================
@@ -114,8 +122,7 @@ async def initialize_ranking_criteria(
     """
     try:
         # Verify tenant access
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized to access this tenant")
+        _check_tenant_param(current_user, tenant_id)
         
         service = RankingService(session)
         criteria_list = await service.initialize_criteria(current_user.tenant_id, property_id)
@@ -125,6 +132,8 @@ async def initialize_ranking_criteria(
             "message": f"Initialized {len(criteria_list)} criteria",
             "criteria_count": len(criteria_list)
         }
+    except NotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
         # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
@@ -152,8 +161,7 @@ async def create_ranking_criterion(
 ):
     """Create new ranking criterion"""
     try:
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         await RankingService(session).require_property(current_user.tenant_id, property_id)
         repo = RankingCriteriaRepository(session)
@@ -170,6 +178,9 @@ async def create_ranking_criterion(
         
         await session.commit()
         return criteria
+    except NotFound as e:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
         # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
         await session.rollback()
@@ -193,13 +204,14 @@ async def list_ranking_criteria(
 ):
     """Get all ranking criteria for property"""
     try:
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         repo = RankingCriteriaRepository(session)
         criteria_list = await repo.get_criteria_by_property(current_user.tenant_id, property_id)
         
         return criteria_list
+    except NotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
         # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
@@ -232,8 +244,7 @@ async def record_employee_score(
     Supports recording historical scores for recalculation.
     """
     try:
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         # Employee and property must belong to the caller's tenant
         service = RankingService(session)
@@ -269,6 +280,9 @@ async def record_employee_score(
         
         await session.commit()
         return score
+    except NotFound as e:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
         # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
         await session.rollback()
@@ -295,8 +309,7 @@ async def get_employee_scores(
 ):
     """Get all scores for an employee"""
     try:
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         repo = EmployeeScoresRepository(session)
         scores = await repo.get_employee_scores(
@@ -307,6 +320,8 @@ async def get_employee_scores(
         )
         
         return scores
+    except NotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
         # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
@@ -343,8 +358,7 @@ async def get_property_rankings(
     - Comparison to previous period
     """
     try:
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         service = RankingService(session)
         items, total = await service.get_rankings_for_property(
@@ -365,6 +379,8 @@ async def get_property_rankings(
             period_end=datetime.now(),
             property_name="Property"  # TODO: Get property name
         )
+    except NotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
         # Deliberate app errors (AccessDenied, NotFound): message is meant for the user.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
@@ -387,8 +403,7 @@ async def get_employee_ranking(
 ):
     """Get detailed ranking for specific employee"""
     try:
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         service = RankingService(session)
         ranking = await service.get_employee_ranking_detail(
@@ -438,8 +453,7 @@ async def get_performance_portal(
     """
     try:
         # Allow employees to view their own portal or allow managers
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         service = RankingService(session)
         portal = await service.get_performance_portal(current_user.tenant_id, employee_id)
@@ -487,8 +501,7 @@ async def get_dashboard_stats(
     - Attendance and overtime metrics
     """
     try:
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         service = RankingService(session)
         stats = await service.get_dashboard_stats(current_user.tenant_id, property_id)
@@ -529,8 +542,7 @@ async def recalculate_rankings(
     Recalculates employee scores, assigns ranks, and generates insights.
     """
     try:
-        if current_user.tenant_id != tenant_id:
-            raise AccessDenied("Not authorized")
+        _check_tenant_param(current_user, tenant_id)
         
         service = RankingService(session)
         result = await service.recalculate_property_rankings(

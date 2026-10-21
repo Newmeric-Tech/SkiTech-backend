@@ -191,8 +191,7 @@ async def test_other_tenants_employee_cannot_be_scored(env, which_property):
         await ranking.record_employee_score(employee_id=ids["other"].employee, tenant_id=MINE,
                                             property_id=ids[which_property].property,
                                             request=request, current_user=USER, session=db)
-    # Same status as a missing employee on this route (NotFound -> 400 today).
-    assert info.value.status_code == 400
+    assert info.value.status_code == 404
     assert _count(s, EmployeeRankingScore, employee_id=ids["other"].employee) == 1  # only the seed row
 
 
@@ -213,9 +212,10 @@ def _criterion_request(name="Punctuality"):
 
 async def test_criterion_cannot_be_created_on_other_tenants_property_own_works(env):
     db, s, ids = env
-    with pytest.raises(HTTPException):
+    with pytest.raises(HTTPException) as info:
         await ranking.create_ranking_criterion(tenant_id=MINE, property_id=ids["other"].property,
                                                request=_criterion_request(), current_user=USER, session=db)
+    assert info.value.status_code == 404
     assert _count(s, RankingCriteriaConfig, property_id=ids["other"].property) == 1
     await ranking.create_ranking_criterion(tenant_id=MINE, property_id=ids["mine"].property,
                                            request=_criterion_request(), current_user=USER, session=db)
@@ -224,9 +224,10 @@ async def test_criterion_cannot_be_created_on_other_tenants_property_own_works(e
 
 async def test_initialize_refuses_other_tenants_property_own_works(env):
     db, s, ids = env
-    with pytest.raises(HTTPException):
+    with pytest.raises(HTTPException) as info:
         await ranking.initialize_ranking_criteria(tenant_id=MINE, property_id=ids["other"].property,
                                                   current_user=USER, session=db)
+    assert info.value.status_code == 404
     assert _count(s, RankingCriteriaConfig, property_id=ids["other"].property) == 1
     result = await ranking.initialize_ranking_criteria(tenant_id=MINE, property_id=ids["mine"].property,
                                                        current_user=USER, session=db)
@@ -255,3 +256,32 @@ async def test_recalculate_refuses_other_tenants_property_own_works(env, monkeyp
     await ranking.recalculate_rankings(property_id=ids["mine"].property, tenant_id=MINE,
                                        request=request, current_user=USER, session=db)
     assert picked == [(MINE, ids["mine"].employee)]
+
+
+# ── request tenant_id that isn't the caller's ───────────────────────────────
+
+def _mismatch_calls(ids):
+    other, p, e = OTHER, ids["mine"].property, ids["mine"].employee
+    req = SimpleNamespace(period_start=START, period_end=END, ranking_type="weekly")
+    return {
+        "initialize": lambda db: ranking.initialize_ranking_criteria(tenant_id=other, property_id=p, current_user=USER, session=db),
+        "create_criterion": lambda db: ranking.create_ranking_criterion(tenant_id=other, property_id=p, request=_criterion_request(), current_user=USER, session=db),
+        "list_criteria": lambda db: ranking.list_ranking_criteria(tenant_id=other, property_id=p, current_user=USER, session=db),
+        "record_score": lambda db: ranking.record_employee_score(employee_id=e, tenant_id=other, property_id=p, request=_score_request(), current_user=USER, session=db),
+        "list_scores": lambda db: ranking.get_employee_scores(employee_id=e, tenant_id=other, property_id=p, period_start=None, period_end=None, current_user=USER, session=db),
+        "property_rankings": lambda db: ranking.get_property_rankings(property_id=p, tenant_id=other, ranking_type="weekly", skip=0, limit=50, current_user=USER, session=db),
+        "employee_ranking": lambda db: ranking.get_employee_ranking(employee_id=e, tenant_id=other, ranking_type="weekly", current_user=USER, session=db),
+        "portal": lambda db: ranking.get_performance_portal(employee_id=e, tenant_id=other, current_user=USER, session=db),
+        "dashboard": lambda db: ranking.get_dashboard_stats(property_id=p, tenant_id=other, current_user=USER, session=db),
+        "recalculate": lambda db: ranking.recalculate_rankings(property_id=p, tenant_id=other, request=req, current_user=USER, session=db),
+    }
+
+
+@pytest.mark.parametrize("route", ["initialize", "create_criterion", "list_criteria", "record_score",
+                                   "list_scores", "property_rankings", "employee_ranking", "portal",
+                                   "dashboard", "recalculate"])
+async def test_request_tenant_mismatch_is_404(env, route):
+    db, _, ids = env
+    with pytest.raises(HTTPException) as info:
+        await _mismatch_calls(ids)[route](db)
+    assert (info.value.status_code, info.value.detail) == (404, "Tenant not found")
