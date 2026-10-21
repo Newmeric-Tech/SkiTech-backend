@@ -29,6 +29,16 @@ from app.utils.exceptions import NotFoundError
 router = APIRouter(prefix="/kra", tags=["KRA"])
 
 
+# Roles that may change or delete anyone's KRA in their tenant.
+KRA_MANAGER_ROLES = {"Manager", "Tenant Admin", "Co Admin", "Super Admin"}
+
+
+def _require_owner_or_manager(kra, user_context: dict) -> None:
+    """Only the KRA's own user, or a manager/admin, may change or delete it."""
+    if kra.user_id != user_context["user_id"] and user_context["role"] not in KRA_MANAGER_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only change your own KRAs")
+
+
 async def get_current_user_context(user: dict = Depends(get_current_user)):
     """Extract user context from JWT for KRA endpoints."""
     return {
@@ -123,6 +133,7 @@ async def update_daily_kra(kra_id: UUID, update_data: DailyKRAUpdate,
     kra = await service.get_daily_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Daily KRA not found")
+    _require_owner_or_manager(kra, user_context)
     kra = await service.update_daily_kra(kra, update_data)
     await db.commit()
     await db.refresh(kra)
@@ -136,6 +147,7 @@ async def delete_daily_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_sessi
     kra = await service.get_daily_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Daily KRA not found")
+    _require_owner_or_manager(kra, user_context)
     await service.delete_daily_kra(kra)
     await db.commit()
 
@@ -195,6 +207,7 @@ async def update_weekly_kra(kra_id: UUID, update_data: WeeklyKRAUpdate,
     kra = await service.get_weekly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Weekly KRA not found")
+    _require_owner_or_manager(kra, user_context)
     kra = await service.update_weekly_kra(kra, update_data)
     await db.commit()
     await db.refresh(kra)
@@ -208,6 +221,7 @@ async def delete_weekly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_sess
     kra = await service.get_weekly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Weekly KRA not found")
+    _require_owner_or_manager(kra, user_context)
     await service.delete_weekly_kra(kra)
     await db.commit()
 
@@ -267,6 +281,7 @@ async def update_monthly_kra(kra_id: UUID, update_data: MonthlyKRAUpdate,
     kra = await service.get_monthly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Monthly KRA not found")
+    _require_owner_or_manager(kra, user_context)
     kra = await service.update_monthly_kra(kra, update_data)
     await db.commit()
     await db.refresh(kra)
@@ -280,6 +295,7 @@ async def delete_monthly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_ses
     kra = await service.get_monthly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Monthly KRA not found")
+    _require_owner_or_manager(kra, user_context)
     await service.delete_monthly_kra(kra)
     await db.commit()
 
@@ -339,6 +355,7 @@ async def update_quarterly_kra(kra_id: UUID, update_data: QuarterlyKRAUpdate,
     kra = await service.get_quarterly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quarterly KRA not found")
+    _require_owner_or_manager(kra, user_context)
     kra = await service.update_quarterly_kra(kra, update_data)
     await db.commit()
     await db.refresh(kra)
@@ -352,5 +369,6 @@ async def delete_quarterly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_s
     kra = await service.get_quarterly_kra_by_id(kra_id=kra_id, tenant_id=user_context["tenant_id"])
     if not kra:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quarterly KRA not found")
+    _require_owner_or_manager(kra, user_context)
     await service.delete_quarterly_kra(kra)
     await db.commit()
