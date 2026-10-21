@@ -195,6 +195,10 @@ async def get_user(
     return await _get_user_or_404(db, user_id, UUID(current_user["tenant_id"]))
 
 
+# Roles a non-Super-Admin may assign, and only to users who already hold one.
+TENANT_ASSIGNABLE_ROLES = ("Manager", "Staff")
+
+
 @router.put("/{user_id}/role", response_model=UserResponse)
 async def update_user_role(
     user_id: UUID,
@@ -202,7 +206,14 @@ async def update_user_role(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_roles(["Super Admin", "Tenant Admin"])),
 ):
-    """Change a user's role. Only Super Admin and Tenant Admin can do this."""
+    """Change a user's role. Only Super Admin and Tenant Admin can do this.
+
+    Nobody may change their own role. Super Admin may assign any role; anyone
+    else may only switch a Manager or Staff user to Manager or Staff.
+    """
+    if str(user_id) == current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="You cannot change your own role.")
+
     user = await _get_user_or_404(db, user_id, UUID(current_user["tenant_id"]))
 
     # Verify the role exists
@@ -212,6 +223,17 @@ async def update_user_role(
     role = role_result.scalar_one_or_none()
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
+
+    if current_user.get("role") != "Super Admin":
+        current_role_name = (await db.execute(
+            select(Role.name).where(Role.id == user.role_id)
+        )).scalar_one_or_none()
+        if role.name not in TENANT_ASSIGNABLE_ROLES or current_role_name not in TENANT_ASSIGNABLE_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only change users between Manager and Staff. "
+                       "Other role changes require a Super Admin.",
+            )
 
     user.role_id = data.role_id
     await db.commit()
