@@ -6,7 +6,10 @@ services:
     region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT
+    # Migrations are not run on start. After pushing a change that adds an Alembic
+    # migration, run `alembic upgrade head` manually against the production database.
+    # The alembic-on-start version timed out on Render's free plan on 2026-10-16 (cause not found).
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: ENVIRONMENT
         value: production
