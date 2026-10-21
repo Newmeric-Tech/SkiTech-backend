@@ -341,10 +341,14 @@ class GeofenceService:
 
     @staticmethod
     async def update_geofence(
-        db: AsyncSession, geofence_id: str, geofence_data: PropertyGeofenceCreate
+        db: AsyncSession, geofence_id: str, tenant_id: str, geofence_data: PropertyGeofenceCreate
     ) -> PropertyGeofence:
+        # Another tenant's geofence behaves as not found.
         result = await db.execute(
-            select(PropertyGeofence).where(PropertyGeofence.id == geofence_id)
+            select(PropertyGeofence).where(
+                PropertyGeofence.id == geofence_id,
+                PropertyGeofence.tenant_id == tenant_id,
+            )
         )
         geofence = result.scalar_one_or_none()
         if not geofence:
@@ -388,9 +392,13 @@ class GeofenceService:
         return list(result.scalars().all()), total
 
     @staticmethod
-    async def delete_geofence(db: AsyncSession, geofence_id: str) -> bool:
+    async def delete_geofence(db: AsyncSession, geofence_id: str, tenant_id: str) -> bool:
+        # Another tenant's geofence behaves as not found.
         result = await db.execute(
-            select(PropertyGeofence).where(PropertyGeofence.id == geofence_id)
+            select(PropertyGeofence).where(
+                PropertyGeofence.id == geofence_id,
+                PropertyGeofence.tenant_id == tenant_id,
+            )
         )
         geofence = result.scalar_one_or_none()
         if not geofence:

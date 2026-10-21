@@ -249,7 +249,7 @@ async def update_geofence(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins and managers can update geofences")
     try:
         geofence = await GeofenceService.update_geofence(
-            db=db, geofence_id=geofence_id, geofence_data=geofence_data
+            db=db, geofence_id=geofence_id, tenant_id=user["tenant_id"], geofence_data=geofence_data
         )
         return PropertyGeofenceResponse.model_validate(geofence)
     except ValueError as e:
@@ -267,7 +267,7 @@ async def delete_geofence(
     if user.get("role") not in ["Admin", "Tenant Admin", "Manager", "Super Admin"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins and managers can delete geofences")
     try:
-        await GeofenceService.delete_geofence(db=db, geofence_id=geofence_id)
+        await GeofenceService.delete_geofence(db=db, geofence_id=geofence_id, tenant_id=user["tenant_id"])
         return {"success": True, "message": "Geofence deleted successfully"}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
