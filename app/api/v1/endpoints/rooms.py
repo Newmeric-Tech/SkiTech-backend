@@ -31,6 +31,7 @@ from decimal import Decimal
 
 from app.api.dependencies import get_current_user, require_permission, require_roles
 from app.core.database import get_db
+from app.models.channel_manager import Integration
 from app.models.models import Booking, Property, Room
 from app.schemas.schemas import (
     BookingCreate, BookingResponse, BookingUpdate,
@@ -80,6 +81,24 @@ async def _get_booking_or_404(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     return booking
+
+
+# Fields the channel manager room sync overwrites (sync_service.sync_rooms).
+SYNCED_ROOM_FIELDS = ("room_number", "room_type")
+
+
+async def _channel_manager_provider(db: AsyncSession, room: Room) -> Optional[str]:
+    """Provider name of the live integration that manages this room, else None.
+    Rooms of a disconnected integration are manual again (the sync would let
+    another integration adopt them), so they are not protected."""
+    if room.integration_id is None:
+        return None
+    return (await db.execute(
+        select(Integration.provider_name).where(
+            Integration.id == room.integration_id,
+            Integration.connection_status != "disconnected",
+        )
+    )).scalar_one_or_none()
 
 
 # ── Rooms CRUD ────────────────────────────────────────────────────────────────
@@ -167,7 +186,16 @@ async def update_room(
 ):
     """Update room details or status."""
     room = await _get_room_or_404(db, room_id, UUID(user["tenant_id"]))
-    for k, v in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if any(k in changes and changes[k] != getattr(room, k) for k in SYNCED_ROOM_FIELDS):
+        provider = await _channel_manager_provider(db, room)
+        if provider:
+            raise HTTPException(
+                status_code=409,
+                detail=f"This room is managed by the channel manager ({provider}). "
+                       "Change its room number and type there; status and price can still be edited here.",
+            )
+    for k, v in changes.items():
         setattr(room, k, v)
     await db.commit()
     await db.refresh(room)
@@ -182,6 +210,13 @@ async def delete_room(
 ):
     """Soft delete a room."""
     room = await _get_room_or_404(db, room_id, UUID(user["tenant_id"]))
+    provider = await _channel_manager_provider(db, room)
+    if provider:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This room is managed by the channel manager ({provider}) and can't be deleted here. "
+                   "Disconnect the integration first to manage this property's rooms manually.",
+        )
     room.deleted_at = datetime.utcnow()
     await db.commit()
     return {"message": "Room deleted successfully"}
@@ -249,6 +284,25 @@ async def regenerate_rooms(
 
     if not prop.num_rooms or prop.num_rooms <= 0:
         raise HTTPException(status_code=400, detail="Property has no num_rooms set. Update the property first.")
+
+    # Regenerating soft-deletes every room, so it would delete synced rooms too.
+    synced_provider = (await db.execute(
+        select(Integration.provider_name)
+        .join(Room, Room.integration_id == Integration.id)
+        .where(
+            Room.property_id == property_id,
+            Room.tenant_id == tenant_id,
+            Room.deleted_at == None,
+            Integration.connection_status != "disconnected",
+        )
+        .limit(1)
+    )).scalar_one_or_none()
+    if synced_provider:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This property's rooms are managed by the channel manager ({synced_provider}) "
+                   "and can't be regenerated. Disconnect the integration first to manage them manually.",
+        )
 
     # Block if active bookings exist for any room in this property
     active_bookings = (await db.execute(

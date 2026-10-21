@@ -716,6 +716,7 @@ class RoomResponse(BaseModel):
     price_per_night: Optional[float]
     status: str
     created_at: datetime
+    integration_id: Optional[UUID] = None  # set when managed by a channel manager integration
 
     class Config:
         from_attributes = True
