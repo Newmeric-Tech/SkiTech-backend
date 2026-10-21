@@ -13,6 +13,8 @@ POST /auth/logout
 
 from datetime import datetime
 
+from uuid import UUID
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -406,13 +408,40 @@ async def superadmin_login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(data: RefreshTokenRequest):
-    """Issue a new access token using a valid refresh token."""
+async def refresh_token(data: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    """Issue a new token pair using a valid refresh token.
+
+    The new payload is rebuilt from the database (same fields as login), so a
+    deleted, deactivated or unverified user is refused and a role, tenant or
+    property change since login takes effect here. Access tokens issued
+    earlier are not revoked; they stay valid until they expire.
+    """
     payload = decode_token(data.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
-    new_payload = {k: v for k, v in payload.items() if k not in ("exp", "type")}
+    try:
+        user_id = UUID(payload.get("user_id") or payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    user = (await db.execute(
+        select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not user or not user.is_active or not user.is_verified:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    role = (await db.execute(select(Role).where(Role.id == user.role_id))).scalar_one_or_none()
+    new_payload = {
+        "sub": str(user.id),
+        "user_id": str(user.id),
+        "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+        "property_id": str(user.property_id) if user.property_id else None,
+        "email": user.email,
+        "role": role.name if role else "Staff",
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
+    }
     return TokenResponse(
         access_token=create_access_token(new_payload),
         refresh_token=create_refresh_token(new_payload),
