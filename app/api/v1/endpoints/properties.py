@@ -17,13 +17,14 @@ from uuid import UUID
 import boto3
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_permission
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import OwnerDetails, Property
+from app.services.adapters import get_adapter
 from app.utils.safe_errors import log_safe_exception
 from app.schemas.schemas import (
     OwnerDetailsCreate, OwnerDetailsResponse, OwnerDetailsUpdate,
@@ -325,3 +326,70 @@ async def upload_property_image(
 
     url = f"{settings.BACKEND_URL}/uploads/property_images/{tenant_id}/{property_id}/{filename}"
     return {"url": url, "storage": "local"}
+
+
+# ── Channel manager room sync status ─────────────────────
+
+def _supports_room_sync(provider_name: str) -> bool:
+    try:
+        return bool(get_adapter(provider_name).supports_room_sync)
+    except ValueError:  # unknown provider
+        return False
+
+
+@router.get("/{property_id}/room-sync-status")
+async def get_room_sync_status(
+    property_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Room sync status for the Rooms page: the property's connected channel
+    manager integration (if any), whether its provider supplies room lists,
+    and its latest sync run with the stored rooms_summary.
+    """
+    tenant_id = UUID(user["tenant_id"])
+    await _get_property_or_404(db, property_id, tenant_id)
+
+    integrations = (await db.execute(text("""
+        SELECT id, provider_name, connection_status, last_sync_at
+        FROM integrations
+        WHERE property_id = :property_id AND tenant_id = :tenant_id
+          AND connection_status != 'disconnected'
+        ORDER BY created_at DESC
+    """), {"property_id": property_id, "tenant_id": tenant_id})).mappings().all()
+    if not integrations:
+        return {"connected": False}
+
+    # One integration owns a property's rooms; if several are connected,
+    # report the one that syncs rooms.
+    integration = next(
+        (i for i in integrations if _supports_room_sync(i["provider_name"])), integrations[0]
+    )
+
+    latest = (await db.execute(text("""
+        SELECT id, started_at, finished_at, status, error_message, rooms_summary
+        FROM sync_logs
+        WHERE integration_id = :integration_id
+        ORDER BY started_at DESC
+        LIMIT 1
+    """), {"integration_id": integration["id"]})).mappings().first()
+
+    return {
+        "connected": True,
+        "integration": {
+            "id": str(integration["id"]),
+            "provider_name": integration["provider_name"],
+            "connection_status": integration["connection_status"],
+            "supports_room_sync": _supports_room_sync(integration["provider_name"]),
+            "last_sync_at": integration["last_sync_at"],
+        },
+        "latest_sync": None if latest is None else {
+            "id": str(latest["id"]),
+            "started_at": latest["started_at"],
+            "finished_at": latest["finished_at"],
+            "status": latest["status"],
+            "error_message": latest["error_message"],
+            "rooms_summary": latest["rooms_summary"],
+        },
+    }
