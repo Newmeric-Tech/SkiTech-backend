@@ -442,6 +442,9 @@ async def list_bookings(
     if status:
         q = q.where(Booking.status == status)
 
+    # Stable order so offset/limit pages neither repeat nor skip bookings
+    q = q.order_by(Booking.check_in.desc(), Booking.id)
+
     result = await db.execute(q.offset(skip).limit(limit))
     return result.scalars().all()
 
