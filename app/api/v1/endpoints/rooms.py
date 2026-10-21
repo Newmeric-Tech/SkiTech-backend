@@ -141,6 +141,9 @@ async def list_rooms(
     if room_type:
         q = q.where(Room.room_type == room_type)
 
+    # Shorter numbers first so numeric room numbers sort naturally (999 before 1004)
+    q = q.order_by(func.length(Room.room_number), Room.room_number, Room.id)
+
     result = await db.execute(q)
     return result.scalars().all()
 
