@@ -1,12 +1,15 @@
 from typing import Any, Dict, List, Optional, Tuple
 import json
+import logging
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.utils.crypto import decrypt
 from app.services.adapters import get_adapter
-from app.utils.safe_errors import safe_error_summary
+from app.utils.safe_errors import log_safe_exception, safe_error_summary
+
+logger = logging.getLogger(__name__)
 
 def add_days(date_str: str, days: int) -> str:
     date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -156,8 +159,14 @@ def plan_room_sync(
     return actions, None
 
 
-async def sync_rooms(db: AsyncSession, integration: Any, fetched: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Apply plan_room_sync for one integration. Caller owns the transaction."""
+async def sync_rooms(db: AsyncSession, integration: Any, fetched: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Apply plan_room_sync for one integration. Caller owns the transaction.
+
+    Returns the run's summary for sync_logs.rooms_summary: the counts per
+    action, each conflict as {room_number, reason}, and "skipped" with the
+    reason when nothing was done. Room numbers only, never guest data.
+    """
     existing = (await db.execute(text("""
         SELECT r.id, r.room_number, r.deleted_at, r.integration_id, r.external_id,
                (i.id IS NOT NULL AND i.connection_status != 'disconnected') AS owner_active
@@ -168,9 +177,10 @@ async def sync_rooms(db: AsyncSession, integration: Any, fetched: List[Dict[str,
 
     actions, skip_reason = plan_room_sync(existing, fetched, str(integration.id))
     counts = {"insert": 0, "adopt": 0, "update": 0, "conflict": 0}
+    conflicts: List[Dict[str, str]] = []
     if skip_reason:
         print(f"Integration {integration.id}: room sync skipped: {skip_reason}.")
-        return counts
+        return {**counts, "conflicts": conflicts, "skipped": skip_reason}
 
     for a in actions:
         counts[a["action"]] += 1
@@ -199,11 +209,30 @@ async def sync_rooms(db: AsyncSession, integration: Any, fetched: List[Dict[str,
             if a["action"] == "adopt":
                 print(f"Integration {integration.id}: adopted existing room {a['room_number']!r}.")
         else:
+            conflicts.append({"room_number": a["room_number"], "reason": a["reason"]})
             print(f"Integration {integration.id}: room {a['room_number']!r} not imported: {a['reason']}.")
 
-    print(f"Integration {integration.id}: rooms imported={counts['insert']} adopted={counts['adopt']} "
-          f"updated={counts['update']} conflicts={counts['conflict']}.")
-    return counts
+    logger.info(
+        "Integration %s: rooms imported=%d adopted=%d updated=%d conflicts=%d",
+        integration.id, counts["insert"], counts["adopt"], counts["update"], counts["conflict"],
+    )
+    return {**counts, "conflicts": conflicts}
+
+
+async def save_rooms_summary(db: AsyncSession, log_id: str, summary: Dict[str, Any]) -> None:
+    """
+    Store a run's room-sync summary on its sync_logs row. Never raises: if the
+    write fails (e.g. migration 026 not applied, so the column is missing) only
+    the savepoint is rolled back and the sync carries on without it.
+    """
+    try:
+        async with db.begin_nested():
+            await db.execute(
+                text("UPDATE sync_logs SET rooms_summary = CAST(:summary AS JSONB) WHERE id = :id"),
+                {"summary": json.dumps(summary), "id": log_id},
+            )
+    except Exception as err:
+        log_safe_exception(logger, f"Sync log {log_id}: could not store rooms_summary", err, logging.WARNING)
 
 
 async def _run_single_integration_sync(db: AsyncSession, integration: Any) -> None:
@@ -224,9 +253,11 @@ async def _run_single_integration_sync(db: AsyncSession, integration: Any) -> No
             try:
                 fetched_rooms = await adapter.fetch_rooms(credentials)
                 async with db.begin_nested():
-                    await sync_rooms(db, integration, fetched_rooms)
+                    rooms_summary = await sync_rooms(db, integration, fetched_rooms)
             except Exception as room_err:
-                print(f"Non-blocking warning: Failed to sync rooms for {integration.provider_name}: {safe_error_summary(room_err)}")
+                rooms_summary = {"error": safe_error_summary(room_err)}
+                print(f"Non-blocking warning: Failed to sync rooms for {integration.provider_name}: {rooms_summary['error']}")
+            await save_rooms_summary(db, log_id, rooms_summary)
 
         # 3. Calculate 90 days date range
         today_str = datetime.now().strftime("%Y-%m-%d")

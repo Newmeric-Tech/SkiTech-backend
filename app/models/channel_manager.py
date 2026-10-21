@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Numeric, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 from app.models.base import Base
 
@@ -32,6 +32,7 @@ class SyncLog(Base):
     status = Column(String(20), nullable=True)  # 'success' | 'error'
     records_synced = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
+    rooms_summary = Column(JSONB, nullable=True)  # room import counts + conflicts (migration 026)
 
 
 class Reservation(Base):
