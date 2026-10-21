@@ -57,7 +57,7 @@ class ComplaintService:
         property_id: UUID of the property the caller is assigned to.
                      None for owner-role users who span all properties.
         user_id:     UUID of the authenticated user (used for audit fields).
-        user_role:   "staff" | "manager" | "owner"  (derived from role_level).
+        user_role:   "staff" | "manager" | "owner"  (derived from the role name).
     """
 
     def __init__(

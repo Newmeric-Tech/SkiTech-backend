@@ -33,6 +33,16 @@ logger = logging.getLogger("skitech")
 # Create router
 router = APIRouter(prefix="/complaints", tags=["Complaints & Error Log"])
 
+# Complaint permission tier per role name. Owners see every property;
+# managers and staff only their own. Unknown/custom roles get "staff".
+COMPLAINT_ROLE_BY_NAME = {
+    "Super Admin": "owner",
+    "Tenant Admin": "owner",
+    "Co Admin": "owner",
+    "Manager": "manager",
+    "Staff": "staff",
+}
+
 
 # ===========================================================
 # DEPENDENCY
@@ -43,14 +53,12 @@ async def get_complaint_service(
     current_user: User = Depends(get_current_user_obj)
 ) -> ComplaintService:
     """Dependency to get complaint service instance"""
-    # Get user role from their role relationship
-    user_role = "staff"
-    if current_user.role_obj:
-        if current_user.role_obj.role_level <= 2:
-            user_role = "owner"
-        elif current_user.role_obj.role_level == 3:
-            user_role = "manager"
-    
+    # Map by role name, like every other access check. role_level is not
+    # usable here: the seeded levels are Manager=2 and Staff=3, which the old
+    # level-based mapping turned into "owner" and "manager".
+    role_name = current_user.role_obj.name if current_user.role_obj else ""
+    user_role = COMPLAINT_ROLE_BY_NAME.get(role_name, "staff")
+
     return ComplaintService(
         db=db,
         tenant_id=current_user.tenant_id,
