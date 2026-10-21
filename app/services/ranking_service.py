@@ -107,6 +107,24 @@ class RankingService:
         self.insight_repo = RankingInsightRepository(session)
 
     # ===========================================================
+    # TENANT SCOPING
+    # ===========================================================
+    # tenant_id always comes from the authenticated user. Another tenant's
+    # property or employee raises the same NotFound as a missing one.
+
+    async def require_property(self, tenant_id: UUID, property_id: UUID) -> Property:
+        prop = await self.session.get(Property, property_id)
+        if not prop or prop.tenant_id != tenant_id:
+            raise NotFound(f"Property {property_id} not found")
+        return prop
+
+    async def require_employee(self, tenant_id: UUID, employee_id: UUID) -> Employee:
+        employee = await self.session.get(Employee, employee_id)
+        if not employee or employee.tenant_id != tenant_id:
+            raise NotFound(f"Employee {employee_id} not found")
+        return employee
+
+    # ===========================================================
     # INITIALIZATION
     # ===========================================================
 
@@ -116,11 +134,12 @@ class RankingService:
         property_id: UUID
     ) -> List:
         """Initialize default criteria for property"""
+        await self.require_property(tenant_id, property_id)
         criteria_list = []
-        
+
         for criterion in DEFAULT_CRITERIA:
             existing = await self.criteria_repo.get_criteria_by_name(
-                property_id, criterion["criterion_name"]
+                tenant_id, property_id, criterion["criterion_name"]
             )
             
             if not existing:
@@ -142,6 +161,7 @@ class RankingService:
 
     async def calculate_employee_ranking(
         self,
+        tenant_id: UUID,
         employee_id: UUID,
         property_id: UUID,
         period_start: datetime,
@@ -152,11 +172,11 @@ class RankingService:
         
         # Get employee
         employee = await self.session.get(Employee, employee_id)
-        if not employee or not employee.is_active:
+        if not employee or not employee.is_active or employee.tenant_id != tenant_id:
             raise NotFound(f"Active employee {employee_id} not found")
-        
+
         # Get all criteria for property
-        criteria_list = await self.criteria_repo.get_criteria_by_property(employee.property_id)
+        criteria_list = await self.criteria_repo.get_criteria_by_property(tenant_id, employee.property_id)
         
         # Fetch scores for each criterion
         scores_breakdown = {}
@@ -165,6 +185,7 @@ class RankingService:
         
         for criterion in criteria_list:
             score = await self.scores_repo.get_score_by_criterion_period(
+                tenant_id=tenant_id,
                 employee_id=employee_id,
                 criterion_name=criterion.criterion_name,
                 period_start=period_start,
@@ -191,6 +212,7 @@ class RankingService:
         
         # Get previous score for trend
         previous_ranking = await self.ranking_repo.get_employee_ranking(
+            tenant_id=tenant_id,
             employee_id=employee_id,
             ranking_type=ranking_type
         )
@@ -261,6 +283,7 @@ class RankingService:
 
     async def recalculate_property_rankings(
         self,
+        tenant_id: UUID,
         property_id: UUID,
         period_start: datetime,
         period_end: datetime,
@@ -272,6 +295,7 @@ class RankingService:
         result = await self.session.execute(
             select(Employee).where(
                 and_(
+                    Employee.tenant_id == tenant_id,
                     Employee.property_id == property_id,
                     Employee.is_active == True
                 )
@@ -287,6 +311,7 @@ class RankingService:
         for employee in employees:
             try:
                 ranking = await self.calculate_employee_ranking(
+                    tenant_id=tenant_id,
                     employee_id=employee.id,
                     property_id=property_id,
                     period_start=period_start,
@@ -302,6 +327,7 @@ class RankingService:
         rankings.sort(key=lambda r: r.overall_score, reverse=True)
         for idx, ranking in enumerate(rankings, 1):
             await self.ranking_repo.update_ranking(
+                tenant_id,
                 ranking.id,
                 rank=idx,
                 total_active_employees=len(rankings)
@@ -398,6 +424,7 @@ class RankingService:
 
     async def get_rankings_for_property(
         self,
+        tenant_id: UUID,
         property_id: UUID,
         ranking_type: str = "weekly",
         skip: int = 0,
@@ -406,6 +433,7 @@ class RankingService:
         """Get formatted ranking list"""
         
         rankings, total = await self.ranking_repo.get_current_rankings(
+            tenant_id=tenant_id,
             property_id=property_id,
             ranking_type=ranking_type,
             skip=skip,
@@ -434,12 +462,14 @@ class RankingService:
 
     async def get_employee_ranking_detail(
         self,
+        tenant_id: UUID,
         employee_id: UUID,
         ranking_type: str = "weekly"
     ) -> Optional[EmployeeRankingResponse]:
         """Get detailed ranking for employee"""
         
         ranking = await self.ranking_repo.get_employee_ranking(
+            tenant_id=tenant_id,
             employee_id=employee_id,
             ranking_type=ranking_type
         )
@@ -451,7 +481,7 @@ class RankingService:
         
         # Build score breakdown
         score_breakdown = []
-        criteria_list = await self.criteria_repo.get_criteria_by_property(ranking.property_id)
+        criteria_list = await self.criteria_repo.get_criteria_by_property(tenant_id, ranking.property_id)
         
         for criterion in criteria_list:
             score = ranking.scores_breakdown.get(criterion.criterion_name, 0)
@@ -491,15 +521,15 @@ class RankingService:
 
     async def get_performance_portal(
         self,
+        tenant_id: UUID,
         employee_id: UUID
     ) -> Optional[EmployeePerformancePortal]:
         """Build employee performance portal"""
         
-        employee = await self.session.get(Employee, employee_id)
-        if not employee:
-            raise NotFound(f"Employee {employee_id} not found")
-        
+        employee = await self.require_employee(tenant_id, employee_id)
+
         ranking = await self.ranking_repo.get_employee_ranking(
+            tenant_id=tenant_id,
             employee_id=employee_id,
             ranking_type="weekly"
         )
@@ -508,7 +538,7 @@ class RankingService:
             raise NotFound(f"No ranking found for employee {employee_id}")
         
         # Get insights
-        insights = await self.insight_repo.get_insights_for_employee(employee_id, limit=5)
+        insights = await self.insight_repo.get_insights_for_employee(tenant_id, employee_id, limit=5)
         badges_earned = [
             EmployeeBadge(
                 badge_name=insight.insight_type,
@@ -571,17 +601,16 @@ class RankingService:
 
     async def get_dashboard_stats(
         self,
+        tenant_id: UUID,
         property_id: UUID
     ) -> Dict:
         """Get dashboard statistics"""
         
         # Get property
-        prop = await self.session.get(Property, property_id)
-        if not prop:
-            raise NotFound(f"Property {property_id} not found")
+        await self.require_property(tenant_id, property_id)
         
         # Get top performers
-        top_5 = await self.ranking_repo.get_top_performers(property_id, limit=5)
+        top_5 = await self.ranking_repo.get_top_performers(tenant_id, property_id, limit=5)
         top_5_items = []
         for ranking in top_5:
             emp = await self.session.get(Employee, ranking.employee_id)
@@ -598,7 +627,7 @@ class RankingService:
             )
         
         # Get stats
-        stats = await self.ranking_repo.get_ranking_statistics(property_id)
+        stats = await self.ranking_repo.get_ranking_statistics(tenant_id, property_id)
         
         # Count by performance status
         promotion_ready = 0
@@ -608,6 +637,7 @@ class RankingService:
         
         result = await self.session.execute(
             select(EmployeeRanking.performance_status, func.count()).where(
+                EmployeeRanking.tenant_id == tenant_id,
                 EmployeeRanking.property_id == property_id
             ).group_by(EmployeeRanking.performance_status)
         )
@@ -623,7 +653,7 @@ class RankingService:
                 needs_improvement = count
         
         # Get insights
-        property_insights = await self.insight_repo.get_insights_for_property(property_id, limit=3)
+        property_insights = await self.insight_repo.get_insights_for_property(tenant_id, property_id, limit=3)
         
         return {
             "overall_workforce_score": stats.get("avg_score", 0),

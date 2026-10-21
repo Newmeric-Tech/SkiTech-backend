@@ -2,6 +2,10 @@
 Ranking System Repository - app/repositories/ranking_repository.py
 
 Data access layer for ranking system.
+
+Every read takes the caller's tenant_id (from the authenticated user, never
+from a request parameter) and filters on it, so another tenant's property or
+employee ids behave as if they did not exist.
 """
 
 from datetime import datetime
@@ -56,11 +60,13 @@ class RankingCriteriaRepository:
 
     async def get_criteria_by_property(
         self,
+        tenant_id: UUID,
         property_id: UUID,
         active_only: bool = True
     ) -> List[RankingCriteriaConfig]:
         """Get all criteria for property"""
         query = select(RankingCriteriaConfig).where(
+            RankingCriteriaConfig.tenant_id == tenant_id,
             RankingCriteriaConfig.property_id == property_id
         )
         if active_only:
@@ -71,6 +77,7 @@ class RankingCriteriaRepository:
 
     async def get_criteria_by_name(
         self,
+        tenant_id: UUID,
         property_id: UUID,
         criterion_name: str
     ) -> Optional[RankingCriteriaConfig]:
@@ -78,6 +85,7 @@ class RankingCriteriaRepository:
         result = await self.session.execute(
             select(RankingCriteriaConfig).where(
                 and_(
+                    RankingCriteriaConfig.tenant_id == tenant_id,
                     RankingCriteriaConfig.property_id == property_id,
                     RankingCriteriaConfig.criterion_name == criterion_name
                 )
@@ -87,11 +95,14 @@ class RankingCriteriaRepository:
 
     async def update_criteria(
         self,
+        tenant_id: UUID,
         criteria_id: UUID,
         **kwargs
-    ) -> RankingCriteriaConfig:
-        """Update criterion"""
+    ) -> Optional[RankingCriteriaConfig]:
+        """Update criterion (None if missing or another tenant's)"""
         criteria = await self.session.get(RankingCriteriaConfig, criteria_id)
+        if criteria and criteria.tenant_id != tenant_id:
+            return None
         if criteria:
             for key, value in kwargs.items():
                 if hasattr(criteria, key):
@@ -151,12 +162,14 @@ class EmployeeScoresRepository:
 
     async def get_employee_scores(
         self,
+        tenant_id: UUID,
         employee_id: UUID,
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None
     ) -> List[EmployeeRankingScore]:
         """Get all scores for employee in period"""
         query = select(EmployeeRankingScore).where(
+            EmployeeRankingScore.tenant_id == tenant_id,
             EmployeeRankingScore.employee_id == employee_id
         )
         if period_start and period_end:
@@ -171,6 +184,7 @@ class EmployeeScoresRepository:
 
     async def get_score_by_criterion_period(
         self,
+        tenant_id: UUID,
         employee_id: UUID,
         criterion_name: str,
         period_start: datetime,
@@ -180,6 +194,7 @@ class EmployeeScoresRepository:
         result = await self.session.execute(
             select(EmployeeRankingScore).where(
                 and_(
+                    EmployeeRankingScore.tenant_id == tenant_id,
                     EmployeeRankingScore.employee_id == employee_id,
                     EmployeeRankingScore.criterion_name == criterion_name,
                     EmployeeRankingScore.period_start == period_start,
@@ -191,11 +206,14 @@ class EmployeeScoresRepository:
 
     async def update_score(
         self,
+        tenant_id: UUID,
         score_id: UUID,
         **kwargs
-    ) -> EmployeeRankingScore:
-        """Update employee score"""
+    ) -> Optional[EmployeeRankingScore]:
+        """Update employee score (None if missing or another tenant's)"""
         score = await self.session.get(EmployeeRankingScore, score_id)
+        if score and score.tenant_id != tenant_id:
+            return None
         if score:
             for key, value in kwargs.items():
                 if hasattr(score, key):
@@ -254,6 +272,7 @@ class EmployeeRankingRepository:
 
     async def get_current_rankings(
         self,
+        tenant_id: UUID,
         property_id: UUID,
         ranking_type: str = "weekly",
         period_start: Optional[datetime] = None,
@@ -264,6 +283,7 @@ class EmployeeRankingRepository:
         """Get rankings for property, most recent"""
         query = select(EmployeeRanking).where(
             and_(
+                EmployeeRanking.tenant_id == tenant_id,
                 EmployeeRanking.property_id == property_id,
                 EmployeeRanking.ranking_type == ranking_type
             )
@@ -292,6 +312,7 @@ class EmployeeRankingRepository:
 
     async def get_employee_ranking(
         self,
+        tenant_id: UUID,
         employee_id: UUID,
         ranking_type: str = "weekly",
         period_start: Optional[datetime] = None,
@@ -300,6 +321,7 @@ class EmployeeRankingRepository:
         """Get specific employee ranking"""
         query = select(EmployeeRanking).where(
             and_(
+                EmployeeRanking.tenant_id == tenant_id,
                 EmployeeRanking.employee_id == employee_id,
                 EmployeeRanking.ranking_type == ranking_type
             )
@@ -318,13 +340,14 @@ class EmployeeRankingRepository:
 
     async def get_top_performers(
         self,
+        tenant_id: UUID,
         property_id: UUID,
         limit: int = 5
     ) -> List[EmployeeRanking]:
         """Get top performers"""
         result = await self.session.execute(
             select(EmployeeRanking)
-            .where(EmployeeRanking.property_id == property_id)
+            .where(EmployeeRanking.tenant_id == tenant_id, EmployeeRanking.property_id == property_id)
             .order_by(EmployeeRanking.rank)
             .limit(limit)
         )
@@ -332,11 +355,14 @@ class EmployeeRankingRepository:
 
     async def update_ranking(
         self,
+        tenant_id: UUID,
         ranking_id: UUID,
         **kwargs
-    ) -> EmployeeRanking:
-        """Update ranking"""
+    ) -> Optional[EmployeeRanking]:
+        """Update ranking (None if missing or another tenant's)"""
         ranking = await self.session.get(EmployeeRanking, ranking_id)
+        if ranking and ranking.tenant_id != tenant_id:
+            return None
         if ranking:
             for key, value in kwargs.items():
                 if hasattr(ranking, key):
@@ -346,6 +372,7 @@ class EmployeeRankingRepository:
 
     async def get_ranking_statistics(
         self,
+        tenant_id: UUID,
         property_id: UUID,
         ranking_type: str = "weekly"
     ) -> dict:
@@ -358,6 +385,7 @@ class EmployeeRankingRepository:
                 func.min(EmployeeRanking.overall_score).label("min_score")
             ).where(
                 and_(
+                    EmployeeRanking.tenant_id == tenant_id,
                     EmployeeRanking.property_id == property_id,
                     EmployeeRanking.ranking_type == ranking_type
                 )
@@ -457,13 +485,14 @@ class RankingInsightRepository:
 
     async def get_insights_for_property(
         self,
+        tenant_id: UUID,
         property_id: UUID,
         limit: int = 10
     ) -> List[RankingInsight]:
         """Get insights for property"""
         result = await self.session.execute(
             select(RankingInsight)
-            .where(RankingInsight.property_id == property_id)
+            .where(RankingInsight.tenant_id == tenant_id, RankingInsight.property_id == property_id)
             .order_by(desc(RankingInsight.priority), desc(RankingInsight.created_at))
             .limit(limit)
         )
@@ -471,13 +500,14 @@ class RankingInsightRepository:
 
     async def get_insights_for_employee(
         self,
+        tenant_id: UUID,
         employee_id: UUID,
         limit: int = 5
     ) -> List[RankingInsight]:
         """Get insights for specific employee"""
         result = await self.session.execute(
             select(RankingInsight)
-            .where(RankingInsight.employee_id == employee_id)
+            .where(RankingInsight.tenant_id == tenant_id, RankingInsight.employee_id == employee_id)
             .order_by(desc(RankingInsight.priority), desc(RankingInsight.created_at))
             .limit(limit)
         )

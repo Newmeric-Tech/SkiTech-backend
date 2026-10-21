@@ -56,7 +56,10 @@ async def get_my_ranking(
     try:
         from sqlalchemy import select
         result = await session.execute(
-            select(Employee).where(Employee.user_id == current_user.id)
+            select(Employee).where(
+                Employee.user_id == current_user.id,
+                Employee.tenant_id == current_user.tenant_id,
+            )
         )
         employee = result.scalar_one_or_none()
         if not employee:
@@ -64,6 +67,7 @@ async def get_my_ranking(
 
         service = RankingService(session)
         ranking = await service.get_employee_ranking_detail(
+            tenant_id=current_user.tenant_id,
             employee_id=employee.id,
             ranking_type=ranking_type
         )
@@ -114,7 +118,7 @@ async def initialize_ranking_criteria(
             raise AccessDenied("Not authorized to access this tenant")
         
         service = RankingService(session)
-        criteria_list = await service.initialize_criteria(tenant_id, property_id)
+        criteria_list = await service.initialize_criteria(current_user.tenant_id, property_id)
         
         return {
             "success": True,
@@ -151,9 +155,10 @@ async def create_ranking_criterion(
         if current_user.tenant_id != tenant_id:
             raise AccessDenied("Not authorized")
         
+        await RankingService(session).require_property(current_user.tenant_id, property_id)
         repo = RankingCriteriaRepository(session)
         criteria = await repo.create_criteria(
-            tenant_id=tenant_id,
+            tenant_id=current_user.tenant_id,
             property_id=property_id,
             criterion_name=request.criterion_name,
             weightage=request.weightage,
@@ -192,7 +197,7 @@ async def list_ranking_criteria(
             raise AccessDenied("Not authorized")
         
         repo = RankingCriteriaRepository(session)
-        criteria_list = await repo.get_criteria_by_property(property_id)
+        criteria_list = await repo.get_criteria_by_property(current_user.tenant_id, property_id)
         
         return criteria_list
     except SkiTechException as e:
@@ -230,17 +235,24 @@ async def record_employee_score(
         if current_user.tenant_id != tenant_id:
             raise AccessDenied("Not authorized")
         
+        # Employee and property must belong to the caller's tenant
+        service = RankingService(session)
+        await service.require_employee(current_user.tenant_id, employee_id)
+        await service.require_property(current_user.tenant_id, property_id)
+
         repo = EmployeeScoresRepository(session)
-        
+
         # Get criterion to get weightage
         criteria_repo = RankingCriteriaRepository(session)
-        criterion = await criteria_repo.get_criteria_by_name(property_id, request.criterion_name)
+        criterion = await criteria_repo.get_criteria_by_name(
+            current_user.tenant_id, property_id, request.criterion_name
+        )
         
         if not criterion:
             raise NotFound(f"Criterion {request.criterion_name} not found")
         
         score = await repo.create_score(
-            tenant_id=tenant_id,
+            tenant_id=current_user.tenant_id,
             property_id=property_id,
             employee_id=employee_id,
             criterion_name=request.criterion_name,
@@ -288,6 +300,7 @@ async def get_employee_scores(
         
         repo = EmployeeScoresRepository(session)
         scores = await repo.get_employee_scores(
+            tenant_id=current_user.tenant_id,
             employee_id=employee_id,
             period_start=period_start,
             period_end=period_end
@@ -335,6 +348,7 @@ async def get_property_rankings(
         
         service = RankingService(session)
         items, total = await service.get_rankings_for_property(
+            tenant_id=current_user.tenant_id,
             property_id=property_id,
             ranking_type=ranking_type,
             skip=skip,
@@ -378,6 +392,7 @@ async def get_employee_ranking(
         
         service = RankingService(session)
         ranking = await service.get_employee_ranking_detail(
+            tenant_id=current_user.tenant_id,
             employee_id=employee_id,
             ranking_type=ranking_type
         )
@@ -427,7 +442,7 @@ async def get_performance_portal(
             raise AccessDenied("Not authorized")
         
         service = RankingService(session)
-        portal = await service.get_performance_portal(employee_id)
+        portal = await service.get_performance_portal(current_user.tenant_id, employee_id)
         
         if not portal:
             raise NotFound("Performance data not available")
@@ -476,7 +491,7 @@ async def get_dashboard_stats(
             raise AccessDenied("Not authorized")
         
         service = RankingService(session)
-        stats = await service.get_dashboard_stats(property_id)
+        stats = await service.get_dashboard_stats(current_user.tenant_id, property_id)
         
         return stats
     except NotFound as e:
@@ -519,6 +534,7 @@ async def recalculate_rankings(
         
         service = RankingService(session)
         result = await service.recalculate_property_rankings(
+            tenant_id=current_user.tenant_id,
             property_id=property_id,
             period_start=request.period_start,
             period_end=request.period_end,

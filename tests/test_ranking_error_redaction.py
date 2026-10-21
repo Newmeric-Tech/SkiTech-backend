@@ -82,7 +82,16 @@ async def test_rollbacks_kept_on_both_paths(monkeypatch):
         async def create_criteria(self, **kwargs):
             raise _realistic_integrity_error({"e": GUEST_EMAIL})
 
+    class TenantOk:
+        def __init__(self, session):
+            pass
+
+        async def require_property(self, tenant_id, property_id):
+            pass
+
     monkeypatch.setattr(ranking, "RankingCriteriaRepository", Repo)
+    # Let the tenant check pass so the failing create_criteria is what's exercised.
+    monkeypatch.setattr(ranking, "RankingService", TenantOk)
     request = SimpleNamespace(criterion_name="c", weightage=1, max_points=1, deduction_rules=None,
                               description=None, details=None)
 
