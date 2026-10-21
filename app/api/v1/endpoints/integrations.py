@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db, get_current_user_obj
+from app.api.dependencies import get_db, get_current_user_obj, require_roles
 from app.models.models import User
 
 from app.schemas.channel_manager import (
@@ -18,6 +18,12 @@ from app.services.adapters import get_adapter
 from app.services.sync_service import sync_single_integration
 
 router = APIRouter()
+
+# Same role rules as the rooms endpoints: connecting a channel manager is an
+# owner action (like room delete/regenerate); a manual sync is allowed to
+# whoever may edit rooms. Co Admin is included via require_roles.
+CONNECT_ROLES = ["Super Admin", "Tenant Admin"]
+SYNC_ROLES = ["Super Admin", "Tenant Admin", "Manager"]
 
 
 @router.get("/integrations", response_model=List[IntegrationOut])
@@ -54,7 +60,10 @@ async def get_integrations(
     return integrations
 
 
-@router.post("/integrations", response_model=IntegrationOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/integrations", response_model=IntegrationOut, status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(CONNECT_ROLES))],
+)
 async def create_integration(
     payload: IntegrationCreate,
     background_tasks: BackgroundTasks,
@@ -167,7 +176,7 @@ async def disconnect_integration(
     return {"success": True, "message": "Integration disconnected successfully."}
 
 
-@router.post("/integrations/{integration_id}/sync")
+@router.post("/integrations/{integration_id}/sync", dependencies=[Depends(require_roles(SYNC_ROLES))])
 async def trigger_manual_sync(
     integration_id: UUID,
     background_tasks: BackgroundTasks,
