@@ -33,6 +33,15 @@ router = APIRouter(prefix="/kra", tags=["KRA"])
 KRA_MANAGER_ROLES = {"Manager", "Tenant Admin", "Co Admin", "Super Admin"}
 
 
+def _scoped_user_id(requested: Optional[UUID], user_context: dict) -> Optional[UUID]:
+    """Which user's KRAs a list/compliance query covers. Managers and admins
+    may filter by any user (or None for the whole tenant); everyone else
+    always gets their own id, whatever they passed."""
+    if user_context["role"] in KRA_MANAGER_ROLES:
+        return requested
+    return user_context["user_id"]
+
+
 def _require_owner_or_manager(kra, user_context: dict) -> None:
     """Only the KRA's own user, or a manager/admin, may change or delete it."""
     if kra.user_id != user_context["user_id"] and user_context["role"] not in KRA_MANAGER_ROLES:
@@ -62,7 +71,7 @@ def resolve_pagination(skip: int, limit: int, page: Optional[int], page_size: Op
 async def get_kra_compliance(
     start_date: dt_date = Query(...),
     end_date: dt_date = Query(...),
-    employee_id: Optional[int] = Query(None),
+    employee_id: Optional[UUID] = Query(None),
     property_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db_session),
     user_context: dict = Depends(get_current_user_context),
@@ -72,7 +81,7 @@ async def get_kra_compliance(
     service = DailyKRAService(db)
     result = await service.calculate_compliance(
         tenant_id=user_context["tenant_id"], start_date=start_date, end_date=end_date,
-        employee_id=employee_id, property_id=property_id,
+        employee_id=_scoped_user_id(employee_id, user_context), property_id=property_id,
     )
     return KRAComplianceResponse(**result)
 
@@ -83,14 +92,14 @@ async def get_kra_compliance(
 async def list_daily_kras(
     skip: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100),
     page: Optional[int] = Query(None, ge=1), page_size: Optional[int] = Query(None, ge=1, le=100),
-    user_id: Optional[int] = Query(None),
+    user_id: Optional[UUID] = Query(None),
     db: AsyncSession = Depends(get_db_session),
     user_context: dict = Depends(get_current_user_context),
 ):
     service = DailyKRAService(db)
     resolved_skip, resolved_limit = resolve_pagination(skip, limit, page, page_size)
     kras, total = await service.list_daily_kras(
-        tenant_id=user_context["tenant_id"], user_id=user_id, skip=resolved_skip, limit=resolved_limit
+        tenant_id=user_context["tenant_id"], user_id=_scoped_user_id(user_id, user_context), skip=resolved_skip, limit=resolved_limit
     )
     return PaginatedResponse(total=total, skip=resolved_skip, limit=resolved_limit,
                              items=[DailyKRAListResponse.from_orm(k) for k in kras])
@@ -158,14 +167,14 @@ async def delete_daily_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_sessi
 async def list_weekly_kras(
     skip: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100),
     page: Optional[int] = Query(None, ge=1), page_size: Optional[int] = Query(None, ge=1, le=100),
-    user_id: Optional[int] = Query(None),
+    user_id: Optional[UUID] = Query(None),
     db: AsyncSession = Depends(get_db_session),
     user_context: dict = Depends(get_current_user_context),
 ):
     service = WeeklyKRAService(db)
     resolved_skip, resolved_limit = resolve_pagination(skip, limit, page, page_size)
     kras, total = await service.list_weekly_kras(
-        tenant_id=user_context["tenant_id"], user_id=user_id, skip=resolved_skip, limit=resolved_limit
+        tenant_id=user_context["tenant_id"], user_id=_scoped_user_id(user_id, user_context), skip=resolved_skip, limit=resolved_limit
     )
     return PaginatedResponse(total=total, skip=resolved_skip, limit=resolved_limit,
                              items=[WeeklyKRAListResponse.from_orm(k) for k in kras])
@@ -232,14 +241,14 @@ async def delete_weekly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_sess
 async def list_monthly_kras(
     skip: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100),
     page: Optional[int] = Query(None, ge=1), page_size: Optional[int] = Query(None, ge=1, le=100),
-    user_id: Optional[int] = Query(None),
+    user_id: Optional[UUID] = Query(None),
     db: AsyncSession = Depends(get_db_session),
     user_context: dict = Depends(get_current_user_context),
 ):
     service = MonthlyKRAService(db)
     resolved_skip, resolved_limit = resolve_pagination(skip, limit, page, page_size)
     kras, total = await service.list_monthly_kras(
-        tenant_id=user_context["tenant_id"], user_id=user_id, skip=resolved_skip, limit=resolved_limit
+        tenant_id=user_context["tenant_id"], user_id=_scoped_user_id(user_id, user_context), skip=resolved_skip, limit=resolved_limit
     )
     return PaginatedResponse(total=total, skip=resolved_skip, limit=resolved_limit,
                              items=[MonthlyKRAListResponse.from_orm(k) for k in kras])
@@ -306,14 +315,14 @@ async def delete_monthly_kra(kra_id: UUID, db: AsyncSession = Depends(get_db_ses
 async def list_quarterly_kras(
     skip: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100),
     page: Optional[int] = Query(None, ge=1), page_size: Optional[int] = Query(None, ge=1, le=100),
-    user_id: Optional[int] = Query(None),
+    user_id: Optional[UUID] = Query(None),
     db: AsyncSession = Depends(get_db_session),
     user_context: dict = Depends(get_current_user_context),
 ):
     service = QuarterlyKRAService(db)
     resolved_skip, resolved_limit = resolve_pagination(skip, limit, page, page_size)
     kras, total = await service.list_quarterly_kras(
-        tenant_id=user_context["tenant_id"], user_id=user_id, skip=resolved_skip, limit=resolved_limit
+        tenant_id=user_context["tenant_id"], user_id=_scoped_user_id(user_id, user_context), skip=resolved_skip, limit=resolved_limit
     )
     return PaginatedResponse(total=total, skip=resolved_skip, limit=resolved_limit,
                              items=[QuarterlyKRAListResponse.from_orm(k) for k in kras])

@@ -267,7 +267,7 @@ class QuarterlyKRAListResponse(BaseModel):
 
 class KRAComplianceResponse(BaseModel):
     tenant_id: UUID
-    employee_id: Optional[int] = None
+    employee_id: Optional[UUID] = None  # the user id the figures cover
     property_id: Optional[int] = None
     start_date: dt_date
     end_date: dt_date
