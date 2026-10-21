@@ -590,13 +590,15 @@ class DocumentService:
         self,
         signature_id: UUID,
         tenant_id: UUID,
+        signer_id: UUID,
         request: DocumentSignatureSubmitRequest
     ) -> Optional[DocumentSignature]:
-        """Submit a signature"""
+        """Submit a signature. Only the requested signer can; anyone else gets None."""
         query = select(DocumentSignature).where(
             and_(
                 DocumentSignature.id == signature_id,
-                DocumentSignature.tenant_id == tenant_id
+                DocumentSignature.tenant_id == tenant_id,
+                DocumentSignature.signer_id == signer_id
             )
         )
         result = await self.db.execute(query)
@@ -627,13 +629,15 @@ class DocumentService:
         self,
         signature_id: UUID,
         tenant_id: UUID,
+        signer_id: UUID,
         request: DocumentSignatureDeclineRequest
     ) -> Optional[DocumentSignature]:
-        """Decline to sign a document"""
+        """Decline to sign a document. Only the requested signer can; anyone else gets None."""
         query = select(DocumentSignature).where(
             and_(
                 DocumentSignature.id == signature_id,
-                DocumentSignature.tenant_id == tenant_id
+                DocumentSignature.tenant_id == tenant_id,
+                DocumentSignature.signer_id == signer_id
             )
         )
         result = await self.db.execute(query)

@@ -33,6 +33,9 @@ from app.services.document_service import DocumentService
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
+# Roles allowed to assign document approvers.
+APPROVER_ASSIGNER_ROLES = {"Manager", "Tenant Admin", "Co Admin", "Super Admin"}
+
 
 # ===========================================================
 # DOCUMENT UPLOAD & RETRIEVAL
@@ -285,8 +288,19 @@ async def assign_approver(
     current_user: User = Depends(get_current_user_obj),
     db: AsyncSession = Depends(get_db)
 ) -> DocumentApprovalResponse:
-    """Assign an approver to the document"""
-    
+    """Assign an approver to the document.
+
+    Only Manager, Tenant Admin, Co Admin and Super Admin may assign, and the
+    approver can be neither the document's uploader nor the caller (no
+    self-approval).
+    """
+    role_name = current_user.role_obj.name if current_user.role_obj else ""
+    if role_name not in APPROVER_ASSIGNER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only managers and admins can assign document approvers",
+        )
+
     try:
         doc_id = uuid.UUID(document_id)
     except ValueError:
@@ -305,6 +319,12 @@ async def assign_approver(
             detail="Document not found"
         )
     
+    if request.approver_id in (document.uploaded_by, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The approver cannot be the document's uploader or yourself",
+        )
+
     approval = await service.assign_approver(
         document_id=doc_id,
         tenant_id=current_user.tenant_id,
@@ -498,7 +518,7 @@ async def submit_signature(
     
     service = DocumentService(db)
     
-    signature = await service.submit_signature(sig_id, current_user.tenant_id, request)
+    signature = await service.submit_signature(sig_id, current_user.tenant_id, current_user.id, request)
     
     if not signature:
         raise HTTPException(
@@ -530,7 +550,7 @@ async def decline_signature(
     
     service = DocumentService(db)
     
-    signature = await service.decline_signature(sig_id, current_user.tenant_id, request)
+    signature = await service.decline_signature(sig_id, current_user.tenant_id, current_user.id, request)
     
     if not signature:
         raise HTTPException(
