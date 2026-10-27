@@ -28,7 +28,7 @@ ADMIN = user("Tenant Admin", user_id=ADMIN_ID)
 def db():
     engine, db = make_env()
     add_user(db, MANAGER_ID, "Mina", "Rao")
-    add_user(db, ADMIN_ID, "Omar")
+    add_user(db, ADMIN_ID, "Omar", role="Tenant Admin")
     yield db
     db.session.close()
     engine.dispose()

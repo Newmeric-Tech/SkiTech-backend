@@ -10,6 +10,10 @@ Who may see or change a property's punch location (geofence):
 
 Out-of-scope properties behave as missing (PropertyNotInScope -> 404), so a
 caller can't tell another tenant's property ids from unknown ones.
+
+The JWT role can be up to one access-token lifetime old, so changes that
+need an admin also check the role stored now (still_geofence_admin): a
+demoted or deactivated admin can't keep approving with an old token.
 """
 from typing import Optional
 from uuid import UUID
@@ -17,7 +21,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import Property
+from app.models.models import Property, Role, User
 
 GEOFENCE_ADMIN_ROLES = ("Super Admin", "Tenant Admin", "Co Admin")
 
@@ -73,3 +77,21 @@ async def property_in_scope(db: AsyncSession, property_id, user: dict) -> UUID:
     if found is None:
         raise PropertyNotInScope()
     return prop_id
+
+
+async def current_role(db: AsyncSession, user: dict) -> Optional[str]:
+    """The caller's role as stored now; None if the account is gone or inactive."""
+    user_id = _as_uuid(user.get("user_id"))
+    if user_id is None:
+        return None
+    return (await db.execute(
+        select(Role.name).join(User, User.role_id == Role.id).where(
+            User.id == user_id,
+            User.is_active == True,
+            User.deleted_at == None,
+        )
+    )).scalar_one_or_none()
+
+
+async def still_geofence_admin(db: AsyncSession, user: dict) -> bool:
+    return await current_role(db, user) in GEOFENCE_ADMIN_ROLES

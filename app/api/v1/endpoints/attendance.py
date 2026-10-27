@@ -18,6 +18,7 @@ from app.schemas.attendance import (
 )
 from app.services.geofence_scope import (
     GEOFENCE_ADMIN_ROLES, PropertyNotInScope, assigned_property, caller_tenant, property_in_scope,
+    still_geofence_admin,
 )
 from app.services.attendance_service import (
     AUTO_CLOSED, MAX_SHIFT_HOURS, PRESENT_STATUSES, STALE_SHIFT_HOURS, AttendanceService, GeofenceService,
@@ -285,6 +286,13 @@ def geofence_admin(user: dict = Depends(get_current_user)) -> dict:
 PROPERTY_NOT_FOUND = "Property not found"
 
 
+async def _ensure_still_admin(db: AsyncSession, user: dict) -> None:
+    """The token's role may be stale; a demoted or deactivated admin gets 403."""
+    if not await still_geofence_admin(db, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Your role no longer allows changing the punch location. Sign in again.")
+
+
 async def _scoped_property(db: AsyncSession, property_id, user: dict) -> UUID:
     try:
         return await property_in_scope(db, property_id, user)
@@ -312,6 +320,7 @@ async def create_geofence(
     user: dict = Depends(geofence_admin),
 ) -> Any:
     prop_id = await _scoped_property(db, geofence_data.property_id, user)
+    await _ensure_still_admin(db, user)
     try:
         geofence = await GeofenceService.create_geofence(
             db=db, tenant_id=caller_tenant(user),
@@ -352,6 +361,7 @@ async def update_geofence(
     user: dict = Depends(geofence_admin),
 ) -> Any:
     await _scoped_geofence(db, geofence_id, user)
+    await _ensure_still_admin(db, user)
     try:
         geofence = await GeofenceService.update_geofence(
             db=db, geofence_id=geofence_id, tenant_id=caller_tenant(user), geofence_data=geofence_data
@@ -370,6 +380,7 @@ async def delete_geofence(
     user: dict = Depends(geofence_admin),
 ) -> Any:
     await _scoped_geofence(db, geofence_id, user)
+    await _ensure_still_admin(db, user)
     try:
         await GeofenceService.delete_geofence(db=db, geofence_id=geofence_id, tenant_id=caller_tenant(user))
         return {"success": True, "message": "Geofence deleted successfully"}

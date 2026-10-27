@@ -26,7 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.attendance import GeofenceChangeRequest, PropertyGeofence
 from app.models.models import Property, User
 from app.schemas.attendance import GeofenceChangeRequestCreate
-from app.services.geofence_scope import assigned_property, caller_tenant, property_in_scope
+from app.services.geofence_scope import (
+    assigned_property, caller_tenant, property_in_scope, still_geofence_admin,
+)
 from app.services.inbox_service import create_inbox_item, mark_inbox_items_actioned
 
 REQUEST_ROLES = ("Super Admin", "Tenant Admin", "Co Admin", "Manager")
@@ -152,6 +154,9 @@ async def _get_for_update(db: AsyncSession, request_id: UUID, user: dict) -> Geo
     return request
 
 
+ROLE_CHANGED = "Your role no longer allows reviewing location requests. Sign in again."
+
+
 def _ensure_reviewable(request: GeofenceChangeRequest, reviewer: UUID) -> None:
     if request.status != PENDING:
         raise RequestConflict(f"This request is already {request.status}.")
@@ -174,6 +179,8 @@ async def approve_request(
     request = await _get_for_update(db, request_id, user)
     reviewer = _user_id(user)
     _ensure_reviewable(request, reviewer)
+    if not await still_geofence_admin(db, user):
+        raise RequestForbidden(ROLE_CHANGED)
 
     live = (await db.execute(
         select(Property.id).where(
@@ -220,6 +227,8 @@ async def reject_request(
 ) -> GeofenceChangeRequest:
     request = await _get_for_update(db, request_id, user)
     _ensure_reviewable(request, _user_id(user))
+    if not await still_geofence_admin(db, user):
+        raise RequestForbidden(ROLE_CHANGED)
     _close(request, "rejected", _user_id(user), review_note)
     await _close_inbox_item(db, request)
     await db.commit()

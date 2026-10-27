@@ -3,7 +3,7 @@ Shared harness for geofence permission/request tests: the attendance router
 against in-memory SQLite (real PropertyGeofence table plus a minimal
 properties table). Never touches the .env database.
 """
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import FastAPI
@@ -25,7 +25,9 @@ def make_env():
     with engine.begin() as conn:
         # Only the columns the code reads (the real tables have JSONB etc.)
         conn.execute(text("CREATE TABLE properties (id CHAR(32), tenant_id CHAR(32), name TEXT, deleted_at DATETIME)"))
-        conn.execute(text("CREATE TABLE users (id CHAR(32), first_name TEXT, last_name TEXT)"))
+        conn.execute(text("CREATE TABLE roles (id CHAR(32), name TEXT)"))
+        conn.execute(text("CREATE TABLE users (id CHAR(32), first_name TEXT, last_name TEXT, role_id CHAR(32), "
+                          "is_active BOOLEAN DEFAULT 1, deleted_at DATETIME)"))
         for pid, tid, deleted in ((PROP_A, TENANT, None), (PROP_B, TENANT, None),
                                   (FOREIGN_PROP, OTHER_TENANT, None), (DELETED_PROP, TENANT, "2026-01-01")):
             conn.execute(text("INSERT INTO properties VALUES (:id, :t, :n, :d)"),
@@ -33,9 +35,37 @@ def make_env():
     return engine, db
 
 
-def add_user(db, user_id, first, last=None):
+def _role_id(conn, role):
+    found = conn.execute(text("SELECT id FROM roles WHERE name = :n"), {"n": role}).scalar()
+    if found:
+        return found
+    rid = uuid4().hex
+    conn.execute(text("INSERT INTO roles VALUES (:id, :n)"), {"id": rid, "n": role})
+    return rid
+
+
+def add_user(db, user_id, first, last=None, role="Manager"):
     with db.session.bind.begin() as conn:
-        conn.execute(text("INSERT INTO users VALUES (:id, :f, :l)"), {"id": user_id.hex, "f": first, "l": last})
+        conn.execute(text("INSERT INTO users (id, first_name, last_name, role_id) VALUES (:id, :f, :l, :r)"),
+                     {"id": user_id.hex, "f": first, "l": last, "r": _role_id(conn, role)})
+
+
+def set_db_role(db, user_id, role=None, is_active=True):
+    """Change what the database says about a user, leaving their token alone."""
+    with db.session.bind.begin() as conn:
+        if role:
+            conn.execute(text("UPDATE users SET role_id = :r WHERE id = :id"),
+                         {"r": _role_id(conn, role), "id": user_id.hex})
+        conn.execute(text("UPDATE users SET is_active = :a WHERE id = :id"), {"a": is_active, "id": user_id.hex})
+
+
+def ensure_user(db, who):
+    """Record a test caller in users with the role their token carries, if not there yet."""
+    uid = UUID(who["user_id"])
+    with db.session.bind.begin() as conn:
+        exists = conn.execute(text("SELECT 1 FROM users WHERE id = :id"), {"id": uid.hex}).scalar()
+    if not exists:
+        add_user(db, uid, who["role"], role=who["role"])
 
 
 def user(role, property_id=None, tenant=TENANT, user_id=None):
@@ -44,6 +74,7 @@ def user(role, property_id=None, tenant=TENANT, user_id=None):
 
 
 def client_for(db, routers, who):
+    ensure_user(db, who)
     app = FastAPI()
     for r in routers:
         app.include_router(r)
