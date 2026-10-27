@@ -167,3 +167,39 @@ class GeofenceChangeRequestResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Missed punch-out corrections ─────────────────────────────────────────
+
+class AttendanceCorrectionCreate(BaseModel):
+    attendance_id: UUID
+    claimed_punch_out_time: datetime = Field(..., description="When you actually left (ISO, with timezone)")
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+class AttendanceCorrectionReview(BaseModel):
+    review_note: Optional[str] = Field(None, max_length=500)
+
+
+class AttendanceCorrectionResponse(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    property_id: UUID
+    property_name: Optional[str] = None
+    attendance_id: UUID
+    punch_in_time: Optional[datetime] = None
+    requested_by: Optional[UUID]
+    requested_by_name: Optional[str] = None
+    requester_role: str
+    claimed_punch_out_time: datetime
+    claimed_hours: Optional[float] = None
+    reason: str
+    status: str
+    reviewed_by: Optional[UUID]
+    reviewed_by_name: Optional[str] = None
+    reviewed_at: Optional[datetime]
+    review_note: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

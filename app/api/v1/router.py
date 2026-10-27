@@ -10,7 +10,7 @@ from app.api.v1.endpoints import (
     properties, sop, workforce, users, stats, reports, rooms,
     kra, attendance, owner, superadmin, dashboard,
     subscriptions, scheduling, complaints, documents, activity_log, ranking,
-    co_admin, integrations, webhooks, inbox, geofence_requests,
+    co_admin, integrations, webhooks, inbox, geofence_requests, attendance_corrections,
 )
 
 router = APIRouter(prefix="/v1")
@@ -43,6 +43,7 @@ router.include_router(governance.router)
 router.include_router(kra.router)
 router.include_router(attendance.router)
 router.include_router(geofence_requests.router)
+router.include_router(attendance_corrections.router)
 
 # Employee Scheduling
 router.include_router(scheduling.router)

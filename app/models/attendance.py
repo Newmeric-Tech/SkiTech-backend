@@ -142,3 +142,53 @@ class GeofenceChangeRequest(Base):
             unique=True, postgresql_where=text("status = 'pending'"), sqlite_where=text("status = 'pending'"),
         ),
     )
+
+
+class AttendanceCorrectionRequest(Base):
+    """
+    A claimed punch-out time for an auto_closed attendance record (migration
+    029). The record's owner submits it; a Manager of the property (for a
+    Staff requester) or Super Admin / Tenant Admin / Co Admin approve it,
+    which completes the record with hours from the approved time. Rows are
+    never deleted, so every request and decision is kept.
+    """
+    __tablename__ = "attendance_correction_requests"
+
+    id: Mapped[UUID] = mapped_column(SQLUUID, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        SQLUUID, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    property_id: Mapped[UUID] = mapped_column(
+        SQLUUID, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    attendance_id: Mapped[UUID] = mapped_column(
+        SQLUUID, ForeignKey("attendance_records.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    requested_by: Mapped[Optional[UUID]] = mapped_column(
+        SQLUUID, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Role of the requester when they asked; decides who may review
+    requester_role: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    claimed_punch_out_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
+    reviewed_by: Mapped[Optional[UUID]] = mapped_column(
+        SQLUUID, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','approved','rejected','cancelled')", name="ck_attendance_correction_status"
+        ),
+        Index(
+            "uq_attendance_correction_pending", "attendance_id",
+            unique=True, postgresql_where=text("status = 'pending'"), sqlite_where=text("status = 'pending'"),
+        ),
+    )

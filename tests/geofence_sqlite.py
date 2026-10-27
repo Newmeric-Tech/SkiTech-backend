@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.api.v1.endpoints import attendance as attendance_routes
-from app.models.attendance import GeofenceChangeRequest
+from app.models.attendance import AttendanceCorrectionRequest, GeofenceChangeRequest
 from app.models.inbox import InboxItem
 from tests.attendance_sqlite import make_db
 
@@ -21,6 +21,7 @@ PROP_A, PROP_B, FOREIGN_PROP, DELETED_PROP = uuid4(), uuid4(), uuid4(), uuid4()
 def make_env():
     engine, db = make_db()
     GeofenceChangeRequest.__table__.create(engine)
+    AttendanceCorrectionRequest.__table__.create(engine)
     InboxItem.__table__.create(engine)
     with engine.begin() as conn:
         # Only the columns the code reads (the real tables have JSONB etc.)
