@@ -12,8 +12,62 @@ from sqlalchemy import select, and_, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import AttendanceRecord, PropertyGeofence
-from app.schemas.attendance import PunchInRequest, PunchOutRequest, PropertyGeofenceCreate
+from app.schemas.attendance import GeolocationData, PunchInRequest, PunchOutRequest, PropertyGeofenceCreate
 from app.utils.geolocation import is_within_geofence, validate_coordinates, get_accuracy_warning
+
+NO_GEOFENCE_MESSAGE = (
+    "Attendance location is not set for this property. Ask your manager or owner to set it."
+)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """punch times are timestamptz; treat a naive value as UTC."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+async def check_punch_location(
+    db: AsyncSession, property_id: str, tenant_id: str, geolocation: GeolocationData
+) -> Tuple[bool, float]:
+    """
+    Decide whether a punch may be recorded at this location. Returns
+    (is_within_fence, distance_meters) or raises ValueError with a message
+    for the user; callers must not write anything before this passes.
+
+    Rejected: no geofence for the property (in the caller's tenant), GPS
+    accuracy worse than get_accuracy_warning's 100 m threshold, or definitely
+    outside: distance - accuracy > radius. A missing accuracy counts as 0.
+    """
+    is_valid, error_msg = validate_coordinates(
+        geolocation.latitude, geolocation.longitude, geolocation.accuracy,
+    )
+    if not is_valid:
+        raise ValueError(f"Invalid coordinates: {error_msg}")
+
+    geofence = (await db.execute(
+        select(PropertyGeofence).where(
+            PropertyGeofence.property_id == property_id,
+            PropertyGeofence.tenant_id == tenant_id,
+        )
+    )).scalar_one_or_none()
+    if geofence is None:
+        raise ValueError(NO_GEOFENCE_MESSAGE)
+
+    if get_accuracy_warning(geolocation.accuracy):
+        raise ValueError(
+            f"GPS accuracy too low ({geolocation.accuracy:.0f} m), move to an open area and try again."
+        )
+
+    is_within, distance, _ = is_within_geofence(
+        geolocation.latitude, geolocation.longitude,
+        geofence.center_lat, geofence.center_lng, geofence.radius_meters,
+    )
+    accuracy = geolocation.accuracy or 0.0
+    if distance - accuracy > geofence.radius_meters:
+        raise ValueError(
+            f"You are {distance:.0f} m from the property; punches are only allowed within "
+            f"{geofence.radius_meters} m. Move closer and try again."
+        )
+    return is_within, distance
 
 
 class AttendanceService:
@@ -39,39 +93,9 @@ class AttendanceService:
         if existing.scalars().first():
             raise ValueError("You already have an active punch-in — punch out first")
 
-        is_valid, error_msg = validate_coordinates(
-            punch_in_request.geolocation.latitude,
-            punch_in_request.geolocation.longitude,
-            punch_in_request.geolocation.accuracy,
+        is_within, distance = await check_punch_location(
+            db, property_id, tenant_id, punch_in_request.geolocation
         )
-        if not is_valid:
-            raise ValueError(f"Invalid coordinates: {error_msg}")
-
-        result = await db.execute(
-            select(PropertyGeofence).where(
-                PropertyGeofence.property_id == property_id,
-                PropertyGeofence.tenant_id == tenant_id,
-            )
-        )
-        geofence = result.scalar_one_or_none()
-
-        is_within = False
-        distance = None
-        warnings = []
-
-        if geofence:
-            is_within, distance, _ = is_within_geofence(
-                punch_in_request.geolocation.latitude,
-                punch_in_request.geolocation.longitude,
-                geofence.center_lat, geofence.center_lng, geofence.radius_meters,
-            )
-            if not is_within:
-                warnings.append(f"Punch in outside geofence. Distance: {distance:.2f}m from property center.")
-
-        accuracy_warning = get_accuracy_warning(punch_in_request.geolocation.accuracy)
-        if accuracy_warning:
-            warnings.append(accuracy_warning)
-        warning = " ".join(warnings) or None
 
         attendance = AttendanceRecord(
             user_id=user_id, property_id=property_id, tenant_id=tenant_id,
@@ -85,7 +109,7 @@ class AttendanceService:
         db.add(attendance)
         await db.commit()
         await db.refresh(attendance)
-        return attendance, bool(warning), warning
+        return attendance, False, None
 
     @staticmethod
     async def create_punch_out(
@@ -95,14 +119,6 @@ class AttendanceService:
         tenant_id: str,
         punch_out_request: PunchOutRequest,
     ) -> Tuple[AttendanceRecord, bool, Optional[str]]:
-        is_valid, error_msg = validate_coordinates(
-            punch_out_request.geolocation.latitude,
-            punch_out_request.geolocation.longitude,
-            punch_out_request.geolocation.accuracy,
-        )
-        if not is_valid:
-            raise ValueError(f"Invalid coordinates: {error_msg}")
-
         result = await db.execute(
             select(AttendanceRecord).where(
                 and_(
@@ -119,31 +135,10 @@ class AttendanceService:
         if not attendance:
             raise ValueError("No active punch in record found for this user")
 
-        geo_result = await db.execute(
-            select(PropertyGeofence).where(
-                PropertyGeofence.property_id == property_id,
-                PropertyGeofence.tenant_id == tenant_id,
-            )
+        # Raises before the open record is touched
+        is_within, distance = await check_punch_location(
+            db, property_id, tenant_id, punch_out_request.geolocation
         )
-        geofence = geo_result.scalar_one_or_none()
-
-        is_within = False
-        distance = None
-        warnings = []
-
-        if geofence:
-            is_within, distance, _ = is_within_geofence(
-                punch_out_request.geolocation.latitude,
-                punch_out_request.geolocation.longitude,
-                geofence.center_lat, geofence.center_lng, geofence.radius_meters,
-            )
-            if not is_within:
-                warnings.append(f"Punch out outside geofence. Distance: {distance:.2f}m from property center.")
-
-        accuracy_warning = get_accuracy_warning(punch_out_request.geolocation.accuracy)
-        if accuracy_warning:
-            warnings.append(accuracy_warning)
-        warning = " ".join(warnings) or None
 
         attendance.punch_out_time = datetime.now(timezone.utc)
         attendance.punch_out_lat = punch_out_request.geolocation.latitude
@@ -152,12 +147,12 @@ class AttendanceService:
         if punch_out_request.notes:
             attendance.notes = punch_out_request.notes
 
-        duration = attendance.punch_out_time - attendance.punch_in_time
+        duration = attendance.punch_out_time - _as_utc(attendance.punch_in_time)
         attendance.hours_worked = round(duration.total_seconds() / 3600, 2)
 
         await db.commit()
         await db.refresh(attendance)
-        return attendance, bool(warning), warning
+        return attendance, False, None
 
     @staticmethod
     async def get_active_punch_in(
