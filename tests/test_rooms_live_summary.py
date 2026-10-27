@@ -252,3 +252,60 @@ async def test_overstaying_guest_can_be_checked_out(overstay_setup):
     assert resp.status_code == 200 and resp.json()["status"] == "completed"
     body = (await client.get(f"/rooms/{PROPERTY_ID}/live-summary")).json()
     assert {r["room_id"]: r["current_booking"] for r in body["rooms"]}[str(rooms_["201"].id)] is None
+
+
+# ── Early check-in ─────────────────────────────────────────────────────────
+
+@pytest.fixture
+def early_setup():
+    engine = create_engine("sqlite://")
+    Room.__table__.create(engine)
+    Booking.__table__.create(engine)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE properties (id CHAR(32), tenant_id CHAR(32), deleted_at DATETIME)"))
+        conn.execute(text("INSERT INTO properties VALUES (:id, :tenant_id, NULL)"),
+                     {"id": PROPERTY_ID.hex, "tenant_id": TENANT_ID.hex})
+    session = Session(engine)
+    now = datetime.utcnow()
+    early_room = Room(id=uuid4(), tenant_id=TENANT_ID, property_id=PROPERTY_ID, room_number="301", status="occupied")
+    future_room = Room(id=uuid4(), tenant_id=TENANT_ID, property_id=PROPERTY_ID, room_number="302", status="available")
+    session.add_all([early_room, future_room])
+    early_id, future_id = uuid4(), uuid4()
+    # Checked in 3 h before the booked check-in time
+    session.add(Booking(id=early_id, tenant_id=TENANT_ID, property_id=PROPERTY_ID, room_id=early_room.id,
+                        created_by=uuid4(), customer_name="Early", status="checked_in",
+                        check_in=now + timedelta(hours=3), check_out=now + 2 * DAY))
+    # Booked (not checked in) for later: not active yet
+    session.add(Booking(id=future_id, tenant_id=TENANT_ID, property_id=PROPERTY_ID, room_id=future_room.id,
+                        created_by=uuid4(), customer_name="Later", status="booked",
+                        check_in=now + timedelta(hours=3), check_out=now + 2 * DAY))
+    session.commit()
+
+    app = FastAPI()
+    app.include_router(rooms.router)
+    app.dependency_overrides[rooms.get_db] = lambda: SQLiteDB(session)
+    app.dependency_overrides[rooms.get_current_user] = lambda: {"tenant_id": str(TENANT_ID), "role": "Manager"}
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+    yield client, early_room, future_room, early_id
+    session.close()
+    engine.dispose()
+
+
+async def test_early_check_in_shows_on_the_card_and_can_be_checked_out(early_setup):
+    client, early_room, future_room, early_id = early_setup
+
+    body = (await client.get(f"/rooms/{PROPERTY_ID}/live-summary")).json()
+    by_room = {r["room_id"]: r["current_booking"] for r in body["rooms"]}
+    early = by_room[str(early_room.id)]
+    assert early["booking_id"] == str(early_id)
+    assert early["overstay"] is False and early["stay_progress_pct"] == 0.0
+    assert by_room[str(future_room.id)] is None   # booked for later: not yet active
+    assert body["active_bookings"] == 1
+    listed = (await client.get(f"/rooms/{PROPERTY_ID}/bookings", params={"active_only": "true"})).json()
+    assert [b["id"] for b in listed] == [str(early_id)]
+
+    resp = await client.put(f"/rooms/bookings/{early_id}/checkout")
+
+    assert resp.status_code == 200 and resp.json()["status"] == "completed"
+    body = (await client.get(f"/rooms/{PROPERTY_ID}/live-summary")).json()
+    assert {r["room_id"]: r["current_booking"] for r in body["rooms"]}[str(early_room.id)] is None

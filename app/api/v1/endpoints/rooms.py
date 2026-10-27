@@ -117,15 +117,12 @@ ACTIVE_BOOKING_STATUSES = ("booked", "checked_in")
 
 
 def _active_at(now: datetime):
-    """Active now: a booked stay between check_in and check_out, or a
-    checked-in guest from check_in on until checked out, including after
-    check_out has passed (late check-out / overstay)."""
-    return and_(
-        Booking.check_in <= now,
-        or_(
-            Booking.status == "checked_in",
-            and_(Booking.status == "booked", Booking.check_out > now),
-        ),
+    """Active now: a booked stay between check_in and check_out, or any
+    checked-in guest until checked out, whatever the dates (early check-in
+    before check_in, late check-out / overstay after check_out)."""
+    return or_(
+        Booking.status == "checked_in",
+        and_(Booking.status == "booked", Booking.check_in <= now, Booking.check_out > now),
     )
 
 
@@ -307,7 +304,8 @@ async def get_live_summary(
 ):
     """
     Room cards: each room's current booking (see _active_at: a booked stay
-    under way, or a checked-in guest, overstays included) or null, plus
+    under way, or a checked-in guest, early check-ins and overstays
+    included) or null, plus
     active-booking counts per booking_source. One rooms query and one
     bookings query.
     """
@@ -580,7 +578,7 @@ async def list_bookings(
 ):
     """List all bookings for a property. Optional filters: status, and
     active_only (see _active_at: booked with check_in <= now < check_out,
-    or checked_in from check_in on, overstays included)."""
+    or checked_in whatever the dates, early check-ins and overstays included)."""
     tenant_id = UUID(user["tenant_id"])
     await _require_property(db, property_id, tenant_id)
 
