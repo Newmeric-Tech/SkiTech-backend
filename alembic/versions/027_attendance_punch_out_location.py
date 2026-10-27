@@ -13,14 +13,14 @@ The existence check is done in SQL (to_regclass) rather than with
 dialect.has_table() so the migration renders with `alembic upgrade --sql`.
 Every statement is IF [NOT] EXISTS, so a re-run is a no-op.
 
-Revision ID: 027_attendance_punch_out_location
+Revision ID: 027_attendance_punch_out_loc
 Revises: 026_sync_log_rooms_summary
 Create Date: 2026-10-27
 
 """
 from alembic import op
 
-revision = "027_attendance_punch_out_location"
+revision = "027_attendance_punch_out_loc"  # alembic_version.version_num is VARCHAR(32)
 down_revision = "026_sync_log_rooms_summary"
 branch_labels = None
 depends_on = None
