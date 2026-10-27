@@ -126,6 +126,28 @@ def _active_at(now: datetime):
     )
 
 
+OVERLAP_DETAIL = "Room already has an active booking for the selected dates"
+
+
+async def _find_overlap(
+    db: AsyncSession, room_id: UUID, check_in: datetime, check_out: datetime,
+    exclude_booking_id: Optional[UUID] = None,
+) -> Optional[Booking]:
+    """An active (booked / checked_in) booking of the room whose stay overlaps
+    [check_in, check_out), other than exclude_booking_id. Shared by create
+    and update so both apply the same rule."""
+    q = select(Booking).where(
+        Booking.room_id == room_id,
+        Booking.deleted_at == None,
+        Booking.status.in_(["booked", "checked_in"]),
+        Booking.check_in < check_out,
+        Booking.check_out > check_in,
+    )
+    if exclude_booking_id is not None:
+        q = q.where(Booking.id != exclude_booking_id)
+    return (await db.execute(q.limit(1))).scalars().first()
+
+
 def _is_overstay(booking: Booking, now: datetime) -> bool:
     return booking.status == "checked_in" and booking.check_out <= now
 
@@ -535,20 +557,8 @@ async def create_booking(
         )
 
     # Check no overlapping active bookings for this room
-    overlap = await db.execute(
-        select(Booking).where(
-            Booking.room_id == data.room_id,
-            Booking.deleted_at == None,
-            Booking.status.in_(["booked", "checked_in"]),
-            Booking.check_in < data.check_out,
-            Booking.check_out > data.check_in,
-        )
-    )
-    if overlap.scalar_one_or_none():
-        raise HTTPException(
-            status_code=400,
-            detail="Room already has an active booking for the selected dates",
-        )
+    if await _find_overlap(db, data.room_id, data.check_in, data.check_out):
+        raise HTTPException(status_code=400, detail=OVERLAP_DETAIL)
 
     booking = Booking(
         tenant_id=tenant_id,
@@ -626,7 +636,24 @@ async def update_booking(
             detail=f"Cannot update a '{booking.status}' booking",
         )
 
-    for k, v in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if "check_in" in changes or "check_out" in changes:
+        for field in ("check_in", "check_out"):
+            if field in changes and changes[field] is None:
+                raise HTTPException(status_code=422, detail=f"{field} can't be empty")
+        # Check the stay as it will be after the update (existing + changed values)
+        check_in = changes.get("check_in", booking.check_in)
+        check_out = changes.get("check_out", booking.check_out)
+        if check_out <= check_in:
+            raise HTTPException(status_code=422, detail="check_out must be after check_in")
+        status_after = changes.get("status") or booking.status
+        status_after = getattr(status_after, "value", status_after)
+        if status_after in ("booked", "checked_in") and await _find_overlap(
+            db, booking.room_id, check_in, check_out, exclude_booking_id=booking.id,
+        ):
+            raise HTTPException(status_code=400, detail=OVERLAP_DETAIL)
+
+    for k, v in changes.items():
         setattr(booking, k, v)
     await db.commit()
     await db.refresh(booking)
