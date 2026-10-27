@@ -71,8 +71,9 @@ async def punch_out(
             message="Punched out successfully" if not has_warning else "Punched out (outside geofence)",
             attendance_id=str(attendance.id),
             hours_worked=attendance.hours_worked or 0,
-            is_within_fence=attendance.punch_out_lat is not None,
-            distance_meters=attendance.distance_meters,
+            # The punch-out location check, not the punch-in one
+            is_within_fence=bool(attendance.punch_out_within_fence),
+            distance_meters=attendance.punch_out_distance_meters,
             warning=warning_msg,
         )
     except ValueError as e:

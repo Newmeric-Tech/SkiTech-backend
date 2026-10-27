@@ -54,6 +54,9 @@ class AttendanceRecordResponse(BaseModel):
     punch_out_time: Optional[datetime] = None
     punch_out_lat: Optional[float] = None
     punch_out_lon: Optional[float] = None
+    punch_out_acc: Optional[float] = None
+    punch_out_within_fence: Optional[bool] = None
+    punch_out_distance_meters: Optional[float] = None
     hours_worked: Optional[float] = None
     status: str
     current_status: Optional[str] = None

@@ -41,6 +41,11 @@ class AttendanceRecord(Base, UUIDMixin, TimestampMixin):
     punch_out_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     punch_out_lat: Mapped[Optional[float]] = mapped_column(Float(precision=10), nullable=True)
     punch_out_lon: Mapped[Optional[float]] = mapped_column(Float(precision=10), nullable=True)
+    # Punch-out location check (migration 027); NULL on rows closed before it
+    # and on stale rows auto-closed without a punch-out location.
+    punch_out_acc: Mapped[Optional[float]] = mapped_column(Float(precision=10), nullable=True)
+    punch_out_within_fence: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    punch_out_distance_meters: Mapped[Optional[float]] = mapped_column(Float(precision=10), nullable=True)
 
     hours_worked: Mapped[Optional[float]] = mapped_column(Float(precision=5), nullable=True)
 

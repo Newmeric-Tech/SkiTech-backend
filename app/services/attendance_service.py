@@ -143,6 +143,9 @@ class AttendanceService:
         attendance.punch_out_time = datetime.now(timezone.utc)
         attendance.punch_out_lat = punch_out_request.geolocation.latitude
         attendance.punch_out_lon = punch_out_request.geolocation.longitude
+        attendance.punch_out_acc = punch_out_request.geolocation.accuracy
+        attendance.punch_out_within_fence = is_within
+        attendance.punch_out_distance_meters = distance
         attendance.status = "completed"
         if punch_out_request.notes:
             attendance.notes = punch_out_request.notes
