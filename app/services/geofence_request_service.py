@@ -27,9 +27,22 @@ from app.models.attendance import GeofenceChangeRequest, PropertyGeofence
 from app.models.models import Property, User
 from app.schemas.attendance import GeofenceChangeRequestCreate
 from app.services.geofence_scope import assigned_property, caller_tenant, property_in_scope
+from app.services.inbox_service import create_inbox_item, mark_inbox_items_actioned
 
 REQUEST_ROLES = ("Super Admin", "Tenant Admin", "Co Admin", "Manager")
 PENDING = "pending"
+
+# Inbox (app/services/inbox_service.py): one item per pending request,
+# addressed to the owner tier (Tenant Admin / Co Admin / Super Admin; a
+# property-scoped Co Admin only sees their property's), flipped to
+# "actioned" once the request is approved, rejected, cancelled or replaced.
+INBOX_MODULE = "attendance"
+INBOX_ITEM_TYPE = "geofence_change_request"
+
+
+async def _close_inbox_item(db: AsyncSession, request: "GeofenceChangeRequest") -> None:
+    await mark_inbox_items_actioned(
+        db, tenant_id=request.tenant_id, source_record_id=request.id, item_type=INBOX_ITEM_TYPE)
 
 
 class RequestNotFound(LookupError):
@@ -68,6 +81,7 @@ async def create_request(
         old.reviewed_by = requester
         old.reviewed_at = now
         old.review_note = "Replaced by a newer request"
+        await _close_inbox_item(db, old)
     # The cancel must reach the partial unique index before the new row does
     await db.flush()
 
@@ -77,6 +91,18 @@ async def create_request(
         address=data.address, note=data.note, status=PENDING, created_at=now,
     )
     db.add(request)
+    await create_inbox_item(
+        db,
+        tenant_id=tenant_id,
+        property_id=property_id,
+        source_module=INBOX_MODULE,
+        item_type=INBOX_ITEM_TYPE,
+        source_record_id=request.id,
+        recipient_role="owner",
+        title="Punch location change requested",
+        body=(f"New punch location proposed: {data.center_lat:.6f}, {data.center_lng:.6f}, "
+              f"radius {data.radius_meters} m. It takes effect only after you approve it."),
+    )
     try:
         await db.commit()
     except IntegrityError:
@@ -178,6 +204,7 @@ async def approve_request(
         if request.address:
             geofence.address = request.address
     _close(request, "approved", reviewer, review_note)
+    await _close_inbox_item(db, request)
     try:
         await db.commit()
     except IntegrityError:
@@ -194,6 +221,7 @@ async def reject_request(
     request = await _get_for_update(db, request_id, user)
     _ensure_reviewable(request, _user_id(user))
     _close(request, "rejected", _user_id(user), review_note)
+    await _close_inbox_item(db, request)
     await db.commit()
     await db.refresh(request)
     return request
@@ -207,6 +235,7 @@ async def cancel_request(db: AsyncSession, user: dict, request_id: UUID) -> Geof
     if request.status != PENDING:
         raise RequestConflict(f"This request is already {request.status}.")
     _close(request, "cancelled", requester, None)
+    await _close_inbox_item(db, request)
     await db.commit()
     await db.refresh(request)
     return request

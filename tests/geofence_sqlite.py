@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from app.api.v1.endpoints import attendance as attendance_routes
 from app.models.attendance import GeofenceChangeRequest
+from app.models.inbox import InboxItem
 from tests.attendance_sqlite import make_db
 
 TENANT, OTHER_TENANT = uuid4(), uuid4()
@@ -20,6 +21,7 @@ PROP_A, PROP_B, FOREIGN_PROP, DELETED_PROP = uuid4(), uuid4(), uuid4(), uuid4()
 def make_env():
     engine, db = make_db()
     GeofenceChangeRequest.__table__.create(engine)
+    InboxItem.__table__.create(engine)
     with engine.begin() as conn:
         # Only the columns the code reads (the real tables have JSONB etc.)
         conn.execute(text("CREATE TABLE properties (id CHAR(32), tenant_id CHAR(32), name TEXT, deleted_at DATETIME)"))
