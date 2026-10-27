@@ -15,7 +15,9 @@ from app.schemas.attendance import (
     PunchInResponse, PunchOutResponse, PropertyGeofenceCreate,
     PropertyGeofenceResponse, GeolocationHistoryFilter, CurrentStatusUpdate,
 )
-from app.services.attendance_service import AttendanceService, GeofenceService
+from app.services.attendance_service import (
+    AUTO_CLOSED, MAX_SHIFT_HOURS, STALE_SHIFT_HOURS, AttendanceService, GeofenceService, is_stale,
+)
 
 router = APIRouter(prefix="/attendance", tags=["Attendance & Geolocation"])
 
@@ -39,7 +41,7 @@ async def punch_in(
         )
         return PunchInResponse(
             success=True,
-            message="Punched in successfully" if not has_warning else "Punched in (outside geofence)",
+            message="Punched in successfully",
             attendance_id=str(attendance.id),
             is_within_fence=attendance.is_within_fence,
             distance_meters=attendance.distance_meters,
@@ -68,7 +70,10 @@ async def punch_out(
         )
         return PunchOutResponse(
             success=True,
-            message="Punched out successfully" if not has_warning else "Punched out (outside geofence)",
+            message=(
+                "Closed a stale open shift without hours" if attendance.status == AUTO_CLOSED
+                else "Punched out successfully"
+            ),
             attendance_id=str(attendance.id),
             hours_worked=attendance.hours_worked or 0,
             # The punch-out location check, not the punch-in one
@@ -98,12 +103,28 @@ async def get_punch_status(
         if not attendance:
             return {"punched_in": False, "message": "No active punch in"}
 
-        duration = datetime.now(timezone.utc) - attendance.punch_in_time
+        now = datetime.now(timezone.utc)
+        if is_stale(attendance, now):
+            # A forgotten punch-out, not a running shift: the next punch-in
+            # (or punch-out) closes it without hours.
+            return {
+                "punched_in": False,
+                "message": f"Open shift older than {STALE_SHIFT_HOURS} hours needs review",
+                "stale_shift": {
+                    "attendance_id": str(attendance.id),
+                    "punch_in_time": attendance.punch_in_time,
+                },
+            }
+
+        punch_in = attendance.punch_in_time
+        if punch_in.tzinfo is None:
+            punch_in = punch_in.replace(tzinfo=timezone.utc)
+        hours = (now - punch_in).total_seconds() / 3600
         return {
             "punched_in": True,
             "attendance_id": str(attendance.id),
             "punch_in_time": attendance.punch_in_time,
-            "hours_so_far": round(duration.total_seconds() / 3600, 2),
+            "hours_so_far": round(min(max(hours, 0.0), MAX_SHIFT_HOURS), 2),
             "is_within_fence": attendance.is_within_fence,
             "current_status": attendance.current_status,
             "punch_in_location": {"latitude": attendance.punch_in_lat, "longitude": attendance.punch_in_lon},
@@ -316,7 +337,8 @@ async def get_property_attendance_today(
         total_staff = staff_count_result.scalar() or len(records)
 
         today_str = datetime.now(timezone.utc).date().isoformat()
-        present = [r for r in records if r.status in ("active", "completed")]
+        # auto_closed: punched in, never punched out (hours unknown) - still present
+        present = [r for r in records if r.status in ("active", "completed", AUTO_CLOSED)]
         return {
             "property_id": property_id,
             "date": today_str,

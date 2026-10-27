@@ -15,6 +15,15 @@ from app.models.attendance import AttendanceRecord, PropertyGeofence
 from app.schemas.attendance import GeolocationData, PunchInRequest, PunchOutRequest, PropertyGeofenceCreate
 from app.utils.geolocation import is_within_geofence, validate_coordinates, get_accuracy_warning
 
+# An open record (status "active", no punch-out) older than this is a
+# forgotten punch-out, not a shift: it is closed as AUTO_CLOSED with
+# hours_worked NULL (unknown, excluded from totals) and punch_out_time NULL
+# rather than inventing a punch-out time and payable hours.
+STALE_SHIFT_HOURS = 16
+# hours_so_far for a running shift never reports more than this.
+MAX_SHIFT_HOURS = 12
+AUTO_CLOSED = "auto_closed"
+
 NO_GEOFENCE_MESSAGE = (
     "Attendance location is not set for this property. Ask your manager or owner to set it."
 )
@@ -23,6 +32,32 @@ NO_GEOFENCE_MESSAGE = (
 def _as_utc(dt: datetime) -> datetime:
     """punch times are timestamptz; treat a naive value as UTC."""
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def is_stale(record: AttendanceRecord, now: datetime) -> bool:
+    return now - _as_utc(record.punch_in_time) > timedelta(hours=STALE_SHIFT_HOURS)
+
+
+def auto_close(record: AttendanceRecord) -> None:
+    """Close a forgotten open record without inventing hours (see STALE_SHIFT_HOURS)."""
+    record.status = AUTO_CLOSED
+    record.current_status = None
+
+
+async def _open_records(db: AsyncSession, user_id, property_id, tenant_id) -> List[AttendanceRecord]:
+    """The user's open records at this property, newest first."""
+    result = await db.execute(
+        select(AttendanceRecord).where(
+            and_(
+                AttendanceRecord.user_id == user_id,
+                AttendanceRecord.property_id == property_id,
+                AttendanceRecord.tenant_id == tenant_id,
+                AttendanceRecord.status == "active",
+                AttendanceRecord.punch_out_time == None,
+            )
+        ).order_by(desc(AttendanceRecord.punch_in_time))
+    )
+    return list(result.scalars().all())
 
 
 async def check_punch_location(
@@ -79,27 +114,23 @@ class AttendanceService:
         tenant_id: str,
         punch_in_request: PunchInRequest,
     ) -> Tuple[AttendanceRecord, bool, Optional[str]]:
-        existing = await db.execute(
-            select(AttendanceRecord).where(
-                and_(
-                    AttendanceRecord.user_id == user_id,
-                    AttendanceRecord.property_id == property_id,
-                    AttendanceRecord.tenant_id == tenant_id,
-                    AttendanceRecord.status == "active",
-                    AttendanceRecord.punch_out_time == None,
-                )
-            )
-        )
-        if existing.scalars().first():
+        now = datetime.now(timezone.utc)
+        open_records = await _open_records(db, user_id, property_id, tenant_id)
+        if any(not is_stale(r, now) for r in open_records):
             raise ValueError("You already have an active punch-in — punch out first")
 
+        # Raises before anything is written, stale records included
         is_within, distance = await check_punch_location(
             db, property_id, tenant_id, punch_in_request.geolocation
         )
 
+        # Only stale records are left: they no longer block a new shift
+        for record in open_records:
+            auto_close(record)
+
         attendance = AttendanceRecord(
             user_id=user_id, property_id=property_id, tenant_id=tenant_id,
-            punch_in_time=datetime.now(timezone.utc),
+            punch_in_time=now,
             punch_in_lat=punch_in_request.geolocation.latitude,
             punch_in_lon=punch_in_request.geolocation.longitude,
             punch_in_acc=punch_in_request.geolocation.accuracy,
@@ -119,28 +150,31 @@ class AttendanceService:
         tenant_id: str,
         punch_out_request: PunchOutRequest,
     ) -> Tuple[AttendanceRecord, bool, Optional[str]]:
-        result = await db.execute(
-            select(AttendanceRecord).where(
-                and_(
-                    AttendanceRecord.user_id == user_id,
-                    AttendanceRecord.property_id == property_id,
-                    AttendanceRecord.tenant_id == tenant_id,
-                    AttendanceRecord.status == "active",
-                    AttendanceRecord.punch_out_time == None,
-                )
-            ).order_by(desc(AttendanceRecord.punch_in_time))
-        )
-        attendance = result.scalars().first()
-
-        if not attendance:
+        open_records = await _open_records(db, user_id, property_id, tenant_id)
+        if not open_records:
             raise ValueError("No active punch in record found for this user")
 
-        # Raises before the open record is touched
+        # Raises before any open record is touched
         is_within, distance = await check_punch_location(
             db, property_id, tenant_id, punch_out_request.geolocation
         )
 
-        attendance.punch_out_time = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        attendance, older = open_records[0], open_records[1:]
+        # Every open record is closed, so the user ends up punched out; only
+        # the newest gets real hours, and only if it is a plausible shift.
+        for record in older:
+            auto_close(record)
+        if is_stale(attendance, now):
+            auto_close(attendance)
+            await db.commit()
+            await db.refresh(attendance)
+            return attendance, True, (
+                f"Your open shift from {_as_utc(attendance.punch_in_time):%d %b %Y %H:%M} UTC was older than "
+                f"{STALE_SHIFT_HOURS} hours, so it was closed without hours. Ask your manager to correct it."
+            )
+
+        attendance.punch_out_time = now
         attendance.punch_out_lat = punch_out_request.geolocation.latitude
         attendance.punch_out_lon = punch_out_request.geolocation.longitude
         attendance.punch_out_acc = punch_out_request.geolocation.accuracy
