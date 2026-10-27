@@ -6,12 +6,13 @@ Tenant isolation enforced via JWT tenant_id.
 """
 
 import asyncio
+import json
 import logging
 import shutil
 import uuid as uuid_lib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 import boto3
@@ -407,3 +408,119 @@ async def get_room_sync_status(
             "rooms_summary": latest["rooms_summary"],
         },
     }
+
+
+# ── Channel activity feed ─────────────────────────────────
+
+# sync_logs rows written before 9e921de (2026-10-14) can hold str() of a
+# database error: the SQL, its bound parameters and the failing row, i.e.
+# guest data. Text containing any of these markers is never returned.
+_UNSAFE_ERROR_MARKERS = ("[SQL", "[parameters", "DETAIL", "Failing row", "Key (", "\n", "\r")
+_MAX_ERROR_TEXT = 200
+
+
+def _safe_error_text(message) -> Optional[str]:
+    """A stored error message if it is a short single-line summary, else None."""
+    if not isinstance(message, str) or not message.strip():
+        return None
+    message = message.strip()
+    if any(marker in message for marker in _UNSAFE_ERROR_MARKERS):
+        return None
+    return message[:_MAX_ERROR_TEXT]
+
+
+def _rooms_summary(raw) -> Optional[dict]:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _count(summary: dict, key: str) -> int:
+    value = summary.get(key)
+    return value if isinstance(value, int) else 0
+
+
+def _activity_item(run) -> dict:
+    status = _run_status(run)
+    summary = _rooms_summary(run["rooms_summary"])
+    error = _safe_error_text(run["error_message"]) if status == "error" else None
+    conflicts = _count(summary, "conflict") if summary else 0
+
+    if status == "syncing":
+        message = "Sync in progress"
+    elif status == "interrupted":
+        message = f"Sync interrupted: no result after {STALE_SYNC_MINUTES} minutes"
+    elif status == "success":
+        n = run["records_synced"] or 0
+        message = f"Synced {n} reservation{'' if n == 1 else 's'}"
+    elif status == "error":
+        message = f"Sync failed: {error}" if error else "Sync failed"
+    else:
+        message = "Sync status unknown"
+
+    if summary and status in ("success", "error"):
+        if "error" in summary:
+            message += "; room import failed"
+        elif summary.get("skipped"):
+            message += "; room import skipped"
+        else:
+            message += (
+                f"; rooms: {_count(summary, 'insert')} imported, {_count(summary, 'adopt')} linked, "
+                f"{_count(summary, 'update')} updated, {conflicts} conflict{'' if conflicts == 1 else 's'}"
+            )
+
+    return {
+        "id": str(run["id"]),
+        "timestamp": run["finished_at"] or run["started_at"],
+        "started_at": run["started_at"],
+        "finished_at": run["finished_at"],
+        "integration_id": str(run["integration_id"]),
+        "provider_name": run["provider_name"],
+        "connection_status": run["connection_status"],
+        "status": status,
+        "records_synced": run["records_synced"] or 0,
+        "conflicts_count": conflicts,
+        "message": message,
+        "error": error,
+    }
+
+
+@router.get("/{property_id}/channel-activity")
+async def get_channel_activity(
+    property_id: UUID,
+    limit: int = Query(default=30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Read-only feed of the property's channel manager sync runs (sync_logs),
+    newest first, with a short message built from the stored counts. Runs
+    of disconnected integrations are kept as history. Never returns raw
+    exception text or credentials.
+    """
+    tenant_id = UUID(user["tenant_id"])
+    await _get_property_or_404(db, property_id, tenant_id)
+    scope = {"property_id": property_id, "tenant_id": tenant_id}
+
+    connected = (await db.execute(text("""
+        SELECT 1 FROM integrations
+        WHERE property_id = :property_id AND tenant_id = :tenant_id
+          AND connection_status != 'disconnected'
+        LIMIT 1
+    """), scope)).first() is not None
+
+    runs = (await db.execute(text("""
+        SELECT s.id, s.integration_id, i.provider_name, i.connection_status,
+               s.started_at, s.finished_at, s.status, s.records_synced,
+               s.error_message, s.rooms_summary
+        FROM sync_logs s
+        JOIN integrations i ON i.id = s.integration_id
+        WHERE i.property_id = :property_id AND i.tenant_id = :tenant_id
+        ORDER BY s.started_at DESC NULLS LAST, s.id DESC
+        LIMIT :limit
+    """), {**scope, "limit": limit})).mappings().all()
+
+    return {"connected": connected, "items": [_activity_item(r) for r in runs]}
