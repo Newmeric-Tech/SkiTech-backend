@@ -2,7 +2,7 @@
 Attendance Endpoints - API routes for punch in/out and geolocation tracking
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -163,6 +163,46 @@ async def update_current_status(
         raise
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error updating status")
+
+@router.get("/totals")
+async def get_my_totals(
+    property_id: str = Query(..., description="Property ID (UUID)"),
+    day_start: Optional[datetime] = Query(None, description="Start of the user's local day (ISO, with offset)"),
+    week_start: Optional[datetime] = Query(None, description="Start of the user's local week (ISO, with offset)"),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> Any:
+    """
+    Hours today / this week for the Punch page. The browser sends its local
+    midnight and week start; without them the UTC day and the UTC week
+    starting Monday are used. Properties have no timezone column.
+    """
+    now = datetime.now(timezone.utc)
+    if day_start is None:
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if week_start is None:
+        week_start = day_start - timedelta(days=day_start.weekday())
+    if day_start.tzinfo is None:
+        day_start = day_start.replace(tzinfo=timezone.utc)
+    if week_start.tzinfo is None:
+        week_start = week_start.replace(tzinfo=timezone.utc)
+    for value in (day_start, week_start):
+        if not now - timedelta(days=8) <= value <= now + timedelta(days=1):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="day_start and week_start must be within the last 7 days")
+    try:
+        return await AttendanceService.get_user_totals(
+            db=db,
+            user_id=user["user_id"],
+            property_id=property_id,
+            tenant_id=user["tenant_id"],
+            day_start=day_start,
+            week_start=week_start,
+            now=now,
+        )
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error calculating totals")
+
 
 # Attendance History
 

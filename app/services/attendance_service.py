@@ -23,6 +23,10 @@ STALE_SHIFT_HOURS = 16
 # hours_so_far for a running shift never reports more than this.
 MAX_SHIFT_HOURS = 12
 AUTO_CLOSED = "auto_closed"
+# A completed record above this many hours is a data error (e.g. a stale
+# record closed against "now" before auto-closing existed): left out of
+# totals and flagged for review.
+MAX_PLAUSIBLE_HOURS = 24
 
 NO_GEOFENCE_MESSAGE = (
     "Attendance location is not set for this property. Ask your manager or owner to set it."
@@ -207,6 +211,67 @@ class AttendanceService:
             ).order_by(desc(AttendanceRecord.punch_in_time))
         )
         return result.scalars().first()
+
+    @staticmethod
+    async def get_user_totals(
+        db: AsyncSession,
+        user_id: str,
+        property_id: str,
+        tenant_id: str,
+        day_start: datetime,
+        week_start: datetime,
+        now: Optional[datetime] = None,
+    ) -> dict:
+        """
+        The user's hours at this property since day_start and since
+        week_start (records counted by punch_in_time): completed shifts of at
+        most MAX_PLAUSIBLE_HOURS plus the running shift (capped at
+        MAX_SHIFT_HOURS, ignored once stale). Implausible completed records
+        and auto-closed ones are counted in needs_review_this_week instead.
+        """
+        now = now or datetime.now(timezone.utc)
+        day_start, week_start = _as_utc(day_start), _as_utc(week_start)
+        result = await db.execute(
+            select(AttendanceRecord).where(
+                and_(
+                    AttendanceRecord.user_id == user_id,
+                    AttendanceRecord.property_id == property_id,
+                    AttendanceRecord.tenant_id == tenant_id,
+                    AttendanceRecord.punch_in_time >= min(day_start, week_start),
+                )
+            )
+        )
+        records = list(result.scalars().all())
+
+        def hours_of(r: AttendanceRecord) -> Optional[float]:
+            """Countable hours of a record, or None if it needs review / has none."""
+            if r.status == "completed":
+                if r.hours_worked is None or r.hours_worked > MAX_PLAUSIBLE_HOURS:
+                    return None
+                return r.hours_worked
+            if r.status == "active" and r.punch_out_time is None and not is_stale(r, now):
+                elapsed = (now - _as_utc(r.punch_in_time)).total_seconds() / 3600
+                return min(max(elapsed, 0.0), MAX_SHIFT_HOURS)
+            return None
+
+        def total(start: datetime) -> float:
+            return round(sum(h for r in records
+                             if _as_utc(r.punch_in_time) >= start and (h := hours_of(r)) is not None), 2)
+
+        def needs_review(r: AttendanceRecord) -> bool:
+            return r.status == AUTO_CLOSED or (
+                r.status == "completed" and r.hours_worked is not None and r.hours_worked > MAX_PLAUSIBLE_HOURS)
+
+        open_shift = next((h for r in records if r.status == "active" and (h := hours_of(r)) is not None), 0.0)
+        return {
+            "day_start": day_start,
+            "week_start": week_start,
+            "hours_today": total(day_start),
+            "hours_this_week": total(week_start),
+            "open_shift_hours": round(open_shift, 2),
+            "needs_review_this_week": sum(
+                1 for r in records if _as_utc(r.punch_in_time) >= week_start and needs_review(r)),
+        }
 
     @staticmethod
     async def get_attendance_history(
