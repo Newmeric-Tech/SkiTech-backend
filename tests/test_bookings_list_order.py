@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints import rooms
@@ -42,6 +42,12 @@ class SQLiteDB:
 def client():
     engine = create_engine("sqlite://")
     Booking.__table__.create(engine)
+    # Only the columns list_bookings' property check reads (the real table
+    # has a JSONB column SQLite can't create).
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE properties (id CHAR(32), tenant_id CHAR(32), deleted_at DATETIME)"))
+        conn.execute(text("INSERT INTO properties VALUES (:id, :tenant_id, NULL)"),
+                     {"id": PROPERTY_ID.hex, "tenant_id": TENANT_ID.hex})
     session = Session(engine)
     # Inserted out of order so SQLite's natural (rowid) order is unsorted.
     for booking_id, check_in in CHECK_INS:

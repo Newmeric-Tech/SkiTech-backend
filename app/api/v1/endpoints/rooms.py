@@ -67,6 +67,31 @@ async def _get_room_or_404(
     return room
 
 
+async def _require_property(db: AsyncSession, property_id: UUID, tenant_id: UUID) -> None:
+    """404 unless the property exists in the caller's tenant."""
+    found = (await db.execute(
+        select(Property.id).where(
+            Property.id == property_id,
+            Property.tenant_id == tenant_id,
+            Property.deleted_at == None,
+        )
+    )).scalar_one_or_none()
+    if found is None:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+
+# A booking is active while its stay is under way and it is not finished.
+ACTIVE_BOOKING_STATUSES = ("booked", "checked_in")
+
+
+def _active_at(now: datetime):
+    return and_(
+        Booking.status.in_(ACTIVE_BOOKING_STATUSES),
+        Booking.check_in <= now,
+        Booking.check_out > now,
+    )
+
+
 async def _get_booking_or_404(
     db: AsyncSession, booking_id: UUID, tenant_id: UUID
 ) -> Booking:
@@ -426,13 +451,17 @@ async def create_booking(
 async def list_bookings(
     property_id: UUID,
     status: Optional[str] = None,
+    active_only: bool = False,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, le=200),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """List all bookings for a property."""
+    """List all bookings for a property. Optional filters: status, and
+    active_only (stay under way now: check_in <= now < check_out, status
+    booked or checked_in)."""
     tenant_id = UUID(user["tenant_id"])
+    await _require_property(db, property_id, tenant_id)
 
     q = select(Booking).where(
         Booking.property_id == property_id,
@@ -441,6 +470,9 @@ async def list_bookings(
     )
     if status:
         q = q.where(Booking.status == status)
+    if active_only:
+        # check_in/check_out are naive TIMESTAMP columns, like utcnow()
+        q = q.where(_active_at(datetime.utcnow()))
 
     # Stable order so offset/limit pages neither repeat nor skip bookings
     q = q.order_by(Booking.check_in.desc(), Booking.id)

@@ -760,6 +760,12 @@ class BookingResponse(BaseModel):
     total_amount: Optional[float]
     status: str
     created_at: datetime
+    booking_source: Optional[str] = None
+    special_requests: Optional[str] = None
+    external_reservation_id: Optional[str] = None
+    currency: Optional[str] = None
+    room_rate: Optional[float] = None
+    payment_status: Optional[str] = None
 
     class Config:
         from_attributes = True
