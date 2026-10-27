@@ -23,6 +23,9 @@ STALE_SHIFT_HOURS = 16
 # hours_so_far for a running shift never reports more than this.
 MAX_SHIFT_HOURS = 12
 AUTO_CLOSED = "auto_closed"
+# Statuses that mean the user was at work: an auto_closed record only shows
+# a punch-in with no punch-out, so it needs review and is not "present".
+PRESENT_STATUSES = ("active", "completed")
 # A completed record above this many hours is a data error (e.g. a stale
 # record closed against "now" before auto-closing existed): left out of
 # totals and flagged for review.
@@ -337,7 +340,9 @@ class AttendanceService:
         )
         records = result.scalars().all()
 
-        total_hours = sum(r.hours_worked or 0 for r in records)
+        # Completed shifts over MAX_PLAUSIBLE_HOURS are data errors, not hours worked
+        total_hours = sum(r.hours_worked or 0 for r in records
+                          if (r.hours_worked or 0) <= MAX_PLAUSIBLE_HOURS)
         within_fence_count = sum(1 for r in records if r.is_within_fence)
 
         return {
@@ -378,11 +383,15 @@ class AttendanceService:
         for r in all_records:
             user_records[str(r.user_id)].append(r)
 
+        # One row per user: the running shift, else the latest completed one,
+        # else (only auto_closed left) the latest record, shown as needs review.
         deduped = []
         for recs in user_records.values():
-            active = [r for r in recs if r.status == "active"]
-            if active:
-                deduped.append(max(active, key=lambda r: r.punch_in_time))
+            for status in ("active", "completed"):
+                matching = [r for r in recs if r.status == status]
+                if matching:
+                    deduped.append(max(matching, key=lambda r: r.punch_in_time))
+                    break
             else:
                 deduped.append(max(recs, key=lambda r: r.punch_in_time))
 

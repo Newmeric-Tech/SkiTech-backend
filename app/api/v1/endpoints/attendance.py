@@ -16,7 +16,8 @@ from app.schemas.attendance import (
     PropertyGeofenceResponse, GeolocationHistoryFilter, CurrentStatusUpdate,
 )
 from app.services.attendance_service import (
-    AUTO_CLOSED, MAX_SHIFT_HOURS, STALE_SHIFT_HOURS, AttendanceService, GeofenceService, is_stale,
+    AUTO_CLOSED, MAX_SHIFT_HOURS, PRESENT_STATUSES, STALE_SHIFT_HOURS, AttendanceService, GeofenceService,
+    is_stale,
 )
 
 router = APIRouter(prefix="/attendance", tags=["Attendance & Geolocation"])
@@ -377,8 +378,7 @@ async def get_property_attendance_today(
         total_staff = staff_count_result.scalar() or len(records)
 
         today_str = datetime.now(timezone.utc).date().isoformat()
-        # auto_closed: punched in, never punched out (hours unknown) - still present
-        present = [r for r in records if r.status in ("active", "completed", AUTO_CLOSED)]
+        present = [r for r in records if r.status in PRESENT_STATUSES]
         return {
             "property_id": property_id,
             "date": today_str,
