@@ -2,12 +2,12 @@
 All Pydantic schemas - app/schemas/schemas.py
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, ValidationError, field_validator
 
 
 # ===========================================================
@@ -722,13 +722,39 @@ class RoomResponse(BaseModel):
         from_attributes = True
 
 
+BOOKING_TIME_HINT = (
+    "must be an ISO 8601 date-time, e.g. 2026-10-27T14:00:00Z or 2026-10-27T19:30:00+05:30 "
+    "(a value without an offset is taken as UTC)"
+)
+
+
+def booking_time_to_naive_utc(value, handler, field_name: str):
+    """bookings.check_in/check_out are TIMESTAMP WITHOUT TIME ZONE holding UTC;
+    asyncpg rejects offset-aware datetimes for them (that used to be a 500).
+    Aware input is converted to UTC and stored naive; naive input is kept
+    as is and taken to be UTC. Unparsable input is a 422 with a clear hint."""
+    try:
+        parsed = handler(value)
+    except ValidationError:
+        raise ValueError(f"{field_name} {BOOKING_TIME_HINT}")
+    if parsed is not None and parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
 class BookingCreate(BaseModel):
     room_id: UUID
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
-    check_in: datetime
-    check_out: datetime
+    check_in: datetime = Field(..., description="UTC; an offset is converted to UTC")
+    check_out: datetime = Field(..., description="UTC; an offset is converted to UTC")
     total_amount: Optional[float] = None
+
+    # Defined before check_out_after_check_in so that one compares UTC values
+    @field_validator("check_in", "check_out", mode="wrap")
+    @classmethod
+    def to_naive_utc(cls, v, handler, info):
+        return booking_time_to_naive_utc(v, handler, info.field_name)
 
     @field_validator("check_out", mode="after")
     @classmethod
@@ -742,10 +768,15 @@ class BookingCreate(BaseModel):
 class BookingUpdate(BaseModel):
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
-    check_in: Optional[datetime] = None
-    check_out: Optional[datetime] = None
+    check_in: Optional[datetime] = Field(None, description="UTC; an offset is converted to UTC")
+    check_out: Optional[datetime] = Field(None, description="UTC; an offset is converted to UTC")
     total_amount: Optional[float] = None
     status: Optional[BookingStatusEnum] = None
+
+    @field_validator("check_in", "check_out", mode="wrap")
+    @classmethod
+    def to_naive_utc(cls, v, handler, info):
+        return booking_time_to_naive_utc(v, handler, info.field_name)
 
 
 class BookingResponse(BaseModel):
