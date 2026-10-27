@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.api.v1.endpoints import attendance as attendance_routes
+from app.models.attendance import GeofenceChangeRequest
 from tests.attendance_sqlite import make_db
 
 TENANT, OTHER_TENANT = uuid4(), uuid4()
@@ -18,14 +19,21 @@ PROP_A, PROP_B, FOREIGN_PROP, DELETED_PROP = uuid4(), uuid4(), uuid4(), uuid4()
 
 def make_env():
     engine, db = make_db()
+    GeofenceChangeRequest.__table__.create(engine)
     with engine.begin() as conn:
-        # Only the columns geofence_scope reads (the real table has JSONB)
-        conn.execute(text("CREATE TABLE properties (id CHAR(32), tenant_id CHAR(32), deleted_at DATETIME)"))
+        # Only the columns the code reads (the real tables have JSONB etc.)
+        conn.execute(text("CREATE TABLE properties (id CHAR(32), tenant_id CHAR(32), name TEXT, deleted_at DATETIME)"))
+        conn.execute(text("CREATE TABLE users (id CHAR(32), first_name TEXT, last_name TEXT)"))
         for pid, tid, deleted in ((PROP_A, TENANT, None), (PROP_B, TENANT, None),
                                   (FOREIGN_PROP, OTHER_TENANT, None), (DELETED_PROP, TENANT, "2026-01-01")):
-            conn.execute(text("INSERT INTO properties VALUES (:id, :t, :d)"),
-                         {"id": pid.hex, "t": tid.hex, "d": deleted})
+            conn.execute(text("INSERT INTO properties VALUES (:id, :t, :n, :d)"),
+                         {"id": pid.hex, "t": tid.hex, "n": f"Property {pid.hex[:4]}", "d": deleted})
     return engine, db
+
+
+def add_user(db, user_id, first, last=None):
+    with db.session.bind.begin() as conn:
+        conn.execute(text("INSERT INTO users VALUES (:id, :f, :l)"), {"id": user_id.hex, "f": first, "l": last})
 
 
 def user(role, property_id=None, tenant=TENANT, user_id=None):

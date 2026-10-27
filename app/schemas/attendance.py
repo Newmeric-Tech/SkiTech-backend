@@ -129,3 +129,41 @@ class GeolocationHistoryFilter(BaseModel):
     status: Optional[str] = None
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=50, ge=1, le=100)
+
+
+# ── Geofence change requests ─────────────────────────────────────────────
+
+class GeofenceChangeRequestCreate(BaseModel):
+    property_id: UUID
+    center_lat: float = Field(..., ge=-90, le=90)
+    center_lng: float = Field(..., ge=-180, le=180)
+    radius_meters: int = Field(..., ge=20, le=2000, description="Allowed punch radius in metres")
+    address: Optional[str] = Field(None, max_length=255)
+    note: Optional[str] = Field(None, max_length=500)
+
+
+class GeofenceChangeRequestReview(BaseModel):
+    review_note: Optional[str] = Field(None, max_length=500)
+
+
+class GeofenceChangeRequestResponse(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    property_id: UUID
+    property_name: Optional[str] = None
+    requested_by: Optional[UUID]
+    requested_by_name: Optional[str] = None
+    center_lat: float
+    center_lng: float
+    radius_meters: int
+    address: Optional[str]
+    note: Optional[str]
+    status: str
+    reviewed_by: Optional[UUID]
+    reviewed_by_name: Optional[str] = None
+    reviewed_at: Optional[datetime]
+    review_note: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
