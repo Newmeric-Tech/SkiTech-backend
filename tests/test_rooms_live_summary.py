@@ -33,6 +33,12 @@ class SQLiteDB:
         self.statements += 1
         return self.session.execute(statement)
 
+    async def commit(self):
+        self.session.commit()
+
+    async def refresh(self, obj):
+        self.session.refresh(obj)
+
 
 @pytest.fixture
 def setup():
@@ -162,3 +168,87 @@ def test_stay_progress_bounds():
     assert rooms._stay_progress(start, end, datetime(2025, 12, 31)) == 0.0
     assert rooms._stay_progress(start, end, datetime(2026, 1, 5)) == 100.0
     assert rooms._stay_progress(start, start, start) == 100.0
+
+
+# ── Overstays ──────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def overstay_setup():
+    engine = create_engine("sqlite://")
+    Room.__table__.create(engine)
+    Booking.__table__.create(engine)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE properties (id CHAR(32), tenant_id CHAR(32), deleted_at DATETIME)"))
+        conn.execute(text("INSERT INTO properties VALUES (:id, :tenant_id, NULL)"),
+                     {"id": PROPERTY_ID.hex, "tenant_id": TENANT_ID.hex})
+    session = Session(engine)
+    now = datetime.utcnow()
+    rooms_ = {n: Room(id=uuid4(), tenant_id=TENANT_ID, property_id=PROPERTY_ID, room_number=n, status="occupied")
+              for n in ("201", "202", "203", "204", "205")}
+    session.add_all(rooms_.values())
+    ids = {}
+
+    def booking(key, room, status, check_in, check_out, source=None):
+        ids[key] = uuid4()
+        session.add(Booking(id=ids[key], tenant_id=TENANT_ID, property_id=PROPERTY_ID, room_id=room.id,
+                            created_by=uuid4(), customer_name=key, status=status, check_in=check_in,
+                            check_out=check_out, booking_source=source))
+
+    booking("overstay", rooms_["201"], "checked_in", now - 3 * DAY, now - timedelta(hours=5), "Expedia")
+    booking("booked_past", rooms_["202"], "booked", now - 3 * DAY, now - DAY, "Expedia")
+    booking("completed_past", rooms_["203"], "completed", now - 3 * DAY, now - DAY, "Expedia")
+    booking("cancelled_past", rooms_["204"], "cancelled", now - 3 * DAY, now - DAY, "Expedia")
+    booking("on_time", rooms_["205"], "checked_in", now - DAY, now + DAY)
+    session.commit()
+
+    app = FastAPI()
+    app.include_router(rooms.router)
+    app.dependency_overrides[rooms.get_db] = lambda: SQLiteDB(session)
+    app.dependency_overrides[rooms.get_current_user] = lambda: {"tenant_id": str(TENANT_ID), "role": "Staff"}
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+    yield client, rooms_, ids
+    session.close()
+    engine.dispose()
+
+
+async def test_overstaying_checked_in_guest_is_still_current(overstay_setup):
+    client, rooms_, ids = overstay_setup
+    body = (await client.get(f"/rooms/{PROPERTY_ID}/live-summary")).json()
+    by_room = {row["room_id"]: row["current_booking"] for row in body["rooms"]}
+
+    overstay = by_room[str(rooms_["201"].id)]
+    assert overstay["booking_id"] == str(ids["overstay"])
+    assert overstay["overstay"] is True and overstay["stay_progress_pct"] == 100.0
+    on_time = by_room[str(rooms_["205"].id)]
+    assert on_time["overstay"] is False and on_time["stay_progress_pct"] < 100
+
+
+async def test_booked_completed_and_cancelled_past_check_out_are_not_active(overstay_setup):
+    client, rooms_, _ = overstay_setup
+    body = (await client.get(f"/rooms/{PROPERTY_ID}/live-summary")).json()
+    by_room = {row["room_id"]: row["current_booking"] for row in body["rooms"]}
+
+    for n in ("202", "203", "204"):
+        assert by_room[str(rooms_[n].id)] is None
+    # Source counts include the overstay (Expedia) and the on-time stay (no source) only
+    assert body["active_bookings"] == 2
+    assert body["source_counts"] == [{"source": "Expedia", "count": 1}, {"source": None, "count": 1}]
+
+
+async def test_bookings_active_only_includes_the_overstay(overstay_setup):
+    client, _, ids = overstay_setup
+    listed = (await client.get(f"/rooms/{PROPERTY_ID}/bookings", params={"active_only": "true"})).json()
+
+    assert {b["id"] for b in listed} == {str(ids["overstay"]), str(ids["on_time"])}
+
+
+async def test_overstaying_guest_can_be_checked_out(overstay_setup):
+    client, rooms_, ids = overstay_setup
+    app = client._transport.app
+    app.dependency_overrides[rooms.get_current_user] = lambda: {"tenant_id": str(TENANT_ID), "role": "Manager"}
+
+    resp = await client.put(f"/rooms/bookings/{ids['overstay']}/checkout")
+
+    assert resp.status_code == 200 and resp.json()["status"] == "completed"
+    body = (await client.get(f"/rooms/{PROPERTY_ID}/live-summary")).json()
+    assert {r["room_id"]: r["current_booking"] for r in body["rooms"]}[str(rooms_["201"].id)] is None

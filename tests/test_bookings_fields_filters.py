@@ -49,7 +49,8 @@ def _booking(key, check_in, check_out, status, tenant_id=TENANT_ID, property_id=
 
 
 IDS = {name: uuid4() for name in (
-    "in_house", "arriving_now", "future", "past", "cancelled_now", "completed_now", "other_tenant")}
+    "in_house", "arriving_now", "future", "past", "booked_past", "cancelled_now", "completed_now",
+    "other_tenant")}
 
 
 @pytest.fixture
@@ -68,7 +69,10 @@ def session():
                  **{**EXPOSED, "room_rate": Decimal("120.50")}),
         _booking(IDS["arriving_now"], NOW - timedelta(minutes=5), NOW + 2 * day, "booked"),
         _booking(IDS["future"], NOW + day, NOW + 2 * day, "booked"),
+        # Checked in, check_out passed, never checked out: overstay -> still active
         _booking(IDS["past"], NOW - 3 * day, NOW - day, "checked_in"),
+        # Booked, never checked in, stay over: not active
+        _booking(IDS["booked_past"], NOW - 3 * day, NOW - day, "booked"),
         _booking(IDS["cancelled_now"], NOW - day, NOW + day, "cancelled"),
         _booking(IDS["completed_now"], NOW - day, NOW + day, "completed"),
         _booking(IDS["other_tenant"], NOW - day, NOW + day, "checked_in",
@@ -115,16 +119,16 @@ async def test_active_only_keeps_stays_under_way(client):
     resp = await _list(client, active_only="true")
 
     assert resp.status_code == 200
-    assert {UUID(b["id"]) for b in resp.json()} == {IDS["in_house"], IDS["arriving_now"]}
+    assert {UUID(b["id"]) for b in resp.json()} == {IDS["in_house"], IDS["arriving_now"], IDS["past"]}
 
 
 async def test_active_only_combines_with_status_and_keeps_order(client):
     only_checked_in = await _list(client, active_only="true", status="checked_in")
     active = await _list(client, active_only="true")
 
-    assert [UUID(b["id"]) for b in only_checked_in.json()] == [IDS["in_house"]]
+    assert [UUID(b["id"]) for b in only_checked_in.json()] == [IDS["in_house"], IDS["past"]]
     # Existing order: newest check-in first
-    assert [UUID(b["id"]) for b in active.json()] == [IDS["arriving_now"], IDS["in_house"]]
+    assert [UUID(b["id"]) for b in active.json()] == [IDS["arriving_now"], IDS["in_house"], IDS["past"]]
 
 
 async def test_without_filters_all_tenant_bookings_are_listed(client):

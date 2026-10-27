@@ -25,7 +25,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decimal import Decimal
@@ -56,6 +56,7 @@ class LiveBooking(BaseModel):
     check_in: datetime
     check_out: datetime
     stay_progress_pct: float
+    overstay: bool = False  # checked in and past check_out
     special_requests: Optional[str]
     total_amount: Optional[float]
     currency: Optional[str]
@@ -116,11 +117,20 @@ ACTIVE_BOOKING_STATUSES = ("booked", "checked_in")
 
 
 def _active_at(now: datetime):
+    """Active now: a booked stay between check_in and check_out, or a
+    checked-in guest from check_in on until checked out, including after
+    check_out has passed (late check-out / overstay)."""
     return and_(
-        Booking.status.in_(ACTIVE_BOOKING_STATUSES),
         Booking.check_in <= now,
-        Booking.check_out > now,
+        or_(
+            Booking.status == "checked_in",
+            and_(Booking.status == "booked", Booking.check_out > now),
+        ),
     )
+
+
+def _is_overstay(booking: Booking, now: datetime) -> bool:
+    return booking.status == "checked_in" and booking.check_out <= now
 
 
 async def _get_booking_or_404(
@@ -296,9 +306,10 @@ async def get_live_summary(
     user: dict = Depends(get_current_user),
 ):
     """
-    Room cards: each room's current booking (stay under way now, status
-    booked or checked_in) or null, plus active-booking counts per
-    booking_source. One rooms query and one bookings query.
+    Room cards: each room's current booking (see _active_at: a booked stay
+    under way, or a checked-in guest, overstays included) or null, plus
+    active-booking counts per booking_source. One rooms query and one
+    bookings query.
     """
     tenant_id = UUID(user["tenant_id"])
     await _require_property(db, property_id, tenant_id)
@@ -340,7 +351,8 @@ async def get_live_summary(
         return LiveBooking(
             booking_id=b.id, status=b.status, guest_name=b.customer_name,
             booking_source=b.booking_source, check_in=b.check_in, check_out=b.check_out,
-            stay_progress_pct=_stay_progress(b.check_in, b.check_out, now),
+            stay_progress_pct=100.0 if _is_overstay(b, now) else _stay_progress(b.check_in, b.check_out, now),
+            overstay=_is_overstay(b, now),
             special_requests=b.special_requests,
             total_amount=b.total_amount, currency=b.currency,
         )
@@ -567,8 +579,8 @@ async def list_bookings(
     user: dict = Depends(get_current_user),
 ):
     """List all bookings for a property. Optional filters: status, and
-    active_only (stay under way now: check_in <= now < check_out, status
-    booked or checked_in)."""
+    active_only (see _active_at: booked with check_in <= now < check_out,
+    or checked_in from check_in on, overstays included)."""
     tenant_id = UUID(user["tenant_id"])
     await _require_property(db, property_id, tenant_id)
 
