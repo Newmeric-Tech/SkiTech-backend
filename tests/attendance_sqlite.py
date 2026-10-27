@@ -38,6 +38,9 @@ class AsyncSQLite:
     async def refresh(self, obj):
         self.session.refresh(obj)
 
+    async def delete(self, obj):
+        self.session.delete(obj)
+
 
 def make_db():
     engine = create_engine("sqlite://")

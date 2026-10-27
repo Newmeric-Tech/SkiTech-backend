@@ -4,16 +4,20 @@ Attendance Endpoints - API routes for punch in/out and geolocation tracking
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user, require_permission
+from app.api.dependencies import get_current_user, require_permission, require_roles
 from app.core.database import get_db
 from app.schemas.attendance import (
     PunchInRequest, PunchOutRequest, AttendanceRecordResponse,
     PunchInResponse, PunchOutResponse, PropertyGeofenceCreate,
     PropertyGeofenceResponse, GeolocationHistoryFilter, CurrentStatusUpdate,
+)
+from app.services.geofence_scope import (
+    GEOFENCE_ADMIN_ROLES, PropertyNotInScope, assigned_property, caller_tenant, property_in_scope,
 )
 from app.services.attendance_service import (
     AUTO_CLOSED, MAX_SHIFT_HOURS, PRESENT_STATUSES, STALE_SHIFT_HOURS, AttendanceService, GeofenceService,
@@ -263,17 +267,55 @@ async def get_daily_summary(
 
 # Geofence Management
 
+_require_geofence_admin = require_roles(list(GEOFENCE_ADMIN_ROLES))
+
+MANAGER_GEOFENCE_DETAIL = (
+    "Managers can't change the punch location directly. Send a change request "
+    "(POST /attendance/geofence-requests); the owner must approve it before it takes effect."
+)
+
+
+def geofence_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Super Admin / Tenant Admin / Co Admin only; Managers are pointed to the request flow."""
+    if user.get("role") == "Manager":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=MANAGER_GEOFENCE_DETAIL)
+    return _require_geofence_admin(user)
+
+
+PROPERTY_NOT_FOUND = "Property not found"
+
+
+async def _scoped_property(db: AsyncSession, property_id, user: dict) -> UUID:
+    try:
+        return await property_in_scope(db, property_id, user)
+    except PropertyNotInScope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=PROPERTY_NOT_FOUND)
+
+
+async def _scoped_geofence(db: AsyncSession, geofence_id: UUID, user: dict):
+    """The geofence if it belongs to a property the caller may manage, else 404."""
+    tenant_id = caller_tenant(user)
+    geofence = tenant_id and await GeofenceService.get_geofence_by_id(db, geofence_id, tenant_id)
+    if not geofence:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Geofence not found")
+    try:
+        await property_in_scope(db, geofence.property_id, user)
+    except PropertyNotInScope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Geofence not found")
+    return geofence
+
+
 @router.post("/geofence", response_model=PropertyGeofenceResponse, status_code=status.HTTP_201_CREATED)
 async def create_geofence(
     geofence_data: PropertyGeofenceCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(geofence_admin),
 ) -> Any:
-    if user.get("role") not in ["Admin", "Tenant Admin", "Manager", "Super Admin"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins and managers can create geofences")
+    prop_id = await _scoped_property(db, geofence_data.property_id, user)
     try:
         geofence = await GeofenceService.create_geofence(
-            db=db, tenant_id=user["tenant_id"], geofence_data=geofence_data
+            db=db, tenant_id=caller_tenant(user),
+            geofence_data=geofence_data.model_copy(update={"property_id": str(prop_id)}),
         )
         return PropertyGeofenceResponse.model_validate(geofence)
     except ValueError as e:
@@ -288,12 +330,13 @@ async def get_geofence(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ) -> Any:
+    prop_id = await _scoped_property(db, property_id, user)
     try:
         geofence = await GeofenceService.get_geofence(
-            db=db, property_id=property_id, tenant_id=user["tenant_id"]
+            db=db, property_id=prop_id, tenant_id=caller_tenant(user)
         )
         if not geofence:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Geofence not found for property {property_id}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Geofence not found for property {prop_id}")
         return PropertyGeofenceResponse.model_validate(geofence)
     except HTTPException:
         raise
@@ -303,16 +346,15 @@ async def get_geofence(
 
 @router.put("/geofence/{geofence_id}", response_model=PropertyGeofenceResponse)
 async def update_geofence(
-    geofence_id: str,
+    geofence_id: UUID,
     geofence_data: PropertyGeofenceCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(geofence_admin),
 ) -> Any:
-    if user.get("role") not in ["Admin", "Tenant Admin", "Manager", "Super Admin"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins and managers can update geofences")
+    await _scoped_geofence(db, geofence_id, user)
     try:
         geofence = await GeofenceService.update_geofence(
-            db=db, geofence_id=geofence_id, tenant_id=user["tenant_id"], geofence_data=geofence_data
+            db=db, geofence_id=geofence_id, tenant_id=caller_tenant(user), geofence_data=geofence_data
         )
         return PropertyGeofenceResponse.model_validate(geofence)
     except ValueError as e:
@@ -323,14 +365,13 @@ async def update_geofence(
 
 @router.delete("/geofence/{geofence_id}")
 async def delete_geofence(
-    geofence_id: str,
+    geofence_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(geofence_admin),
 ) -> Any:
-    if user.get("role") not in ["Admin", "Tenant Admin", "Manager", "Super Admin"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins and managers can delete geofences")
+    await _scoped_geofence(db, geofence_id, user)
     try:
-        await GeofenceService.delete_geofence(db=db, geofence_id=geofence_id, tenant_id=user["tenant_id"])
+        await GeofenceService.delete_geofence(db=db, geofence_id=geofence_id, tenant_id=caller_tenant(user))
         return {"success": True, "message": "Geofence deleted successfully"}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -455,9 +496,18 @@ async def list_geofences(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ) -> Any:
+    tenant_id = caller_tenant(user)
+    if tenant_id is None:
+        return {"total": 0, "count": 0, "geofences": [],
+                "page_info": {"skip": skip, "limit": limit, "has_more": False}}
+    limited_to = assigned_property(user)
+    if user.get("role") in ("Manager", "Staff") and limited_to is None:
+        return {"total": 0, "count": 0, "geofences": [],
+                "page_info": {"skip": skip, "limit": limit, "has_more": False}}
     try:
+        # Managers, staff and a property-scoped Co Admin only see their property's
         geofences, total_count = await GeofenceService.list_geofences(
-            db=db, tenant_id=user["tenant_id"], skip=skip, limit=limit
+            db=db, tenant_id=tenant_id, skip=skip, limit=limit, property_id=limited_to
         )
         return {
             "total": total_count,

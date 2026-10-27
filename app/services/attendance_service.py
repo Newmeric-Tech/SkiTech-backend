@@ -7,6 +7,7 @@ attendance record management, and geofence configuration.
 
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, List
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, and_, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -433,17 +434,20 @@ class GeofenceService:
     async def create_geofence(
         db: AsyncSession, tenant_id: str, geofence_data: PropertyGeofenceCreate
     ) -> PropertyGeofence:
+        property_id = UUID(str(geofence_data.property_id))
         result = await db.execute(
             select(PropertyGeofence).where(
-                PropertyGeofence.property_id == geofence_data.property_id,
+                PropertyGeofence.property_id == property_id,
                 PropertyGeofence.tenant_id == tenant_id,
             )
         )
         if result.scalar_one_or_none():
-            raise ValueError(f"Geofence already exists for property {geofence_data.property_id}")
+            raise ValueError(f"Geofence already exists for property {property_id}")
 
+        # PropertyGeofence.id has no Python-side default (the DB has one)
         geofence = PropertyGeofence(
-            property_id=geofence_data.property_id, tenant_id=tenant_id,
+            id=uuid4(),
+            property_id=property_id, tenant_id=tenant_id,
             property_name=geofence_data.property_name,
             center_lat=geofence_data.center_lat, center_lng=geofence_data.center_lng,
             radius_meters=geofence_data.radius_meters,
@@ -477,6 +481,18 @@ class GeofenceService:
         return geofence
 
     @staticmethod
+    async def get_geofence_by_id(
+        db: AsyncSession, geofence_id, tenant_id
+    ) -> Optional[PropertyGeofence]:
+        result = await db.execute(
+            select(PropertyGeofence).where(
+                PropertyGeofence.id == geofence_id,
+                PropertyGeofence.tenant_id == tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
     async def get_geofence(
         db: AsyncSession, property_id: str, tenant_id: str
     ) -> Optional[PropertyGeofence]:
@@ -490,18 +506,19 @@ class GeofenceService:
 
     @staticmethod
     async def list_geofences(
-        db: AsyncSession, tenant_id: str, skip: int = 0, limit: int = 100
+        db: AsyncSession, tenant_id: str, skip: int = 0, limit: int = 100, property_id=None
     ) -> Tuple[List[PropertyGeofence], int]:
+        filters = [PropertyGeofence.tenant_id == tenant_id]
+        if property_id is not None:
+            filters.append(PropertyGeofence.property_id == property_id)
         count_result = await db.execute(
-            select(func.count()).select_from(PropertyGeofence).where(
-                PropertyGeofence.tenant_id == tenant_id
-            )
+            select(func.count()).select_from(PropertyGeofence).where(and_(*filters))
         )
         total = count_result.scalar() or 0
 
         result = await db.execute(
             select(PropertyGeofence)
-            .where(PropertyGeofence.tenant_id == tenant_id)
+            .where(and_(*filters))
             .offset(skip)
             .limit(limit)
         )

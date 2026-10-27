@@ -96,7 +96,7 @@ class PropertyGeofenceCreate(BaseModel):
     property_name: Optional[str] = Field(None, max_length=255)
     center_lat: float = Field(..., ge=-90, le=90)
     center_lng: float = Field(..., ge=-180, le=180)
-    radius_meters: int = Field(default=500, ge=50, le=5000)
+    radius_meters: int = Field(default=200, ge=20, le=2000, description="Allowed punch radius in metres")
     address: Optional[str] = Field(None, max_length=255)
     city: Optional[str] = Field(None, max_length=100)
     country: Optional[str] = Field(None, max_length=100)
@@ -104,9 +104,9 @@ class PropertyGeofenceCreate(BaseModel):
 
 
 class PropertyGeofenceResponse(BaseModel):
-    id: str
-    property_id: str
-    tenant_id: str
+    id: UUID
+    property_id: UUID
+    tenant_id: UUID
     property_name: Optional[str]
     center_lat: float
     center_lng: float

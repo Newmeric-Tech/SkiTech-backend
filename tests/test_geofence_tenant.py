@@ -100,16 +100,21 @@ async def test_own_geofence_can_be_updated_and_deleted(env):
 def route_calls(monkeypatch):
     calls = []
 
-    async def not_found(**kwargs):
-        calls.append(kwargs)
-        raise ValueError(f"Geofence {kwargs['geofence_id']} not found")
+    # Another tenant's geofence id: the tenant-filtered lookup finds nothing
+    async def not_found(db, geofence_id, tenant_id):
+        calls.append({"geofence_id": geofence_id, "tenant_id": tenant_id})
+        return None
 
-    monkeypatch.setattr(GeofenceService, "update_geofence", staticmethod(not_found))
-    monkeypatch.setattr(GeofenceService, "delete_geofence", staticmethod(not_found))
+    async def must_not_run(**kwargs):
+        raise AssertionError("update/delete must not run for a geofence outside the tenant")
+
+    monkeypatch.setattr(GeofenceService, "get_geofence_by_id", staticmethod(not_found))
+    monkeypatch.setattr(GeofenceService, "update_geofence", staticmethod(must_not_run))
+    monkeypatch.setattr(GeofenceService, "delete_geofence", staticmethod(must_not_run))
     app = FastAPI()
     app.include_router(attendance.router)
     app.dependency_overrides[attendance.get_db] = lambda: None
-    app.dependency_overrides[attendance.get_current_user] = lambda: {"tenant_id": str(MINE), "role": "Manager"}
+    app.dependency_overrides[attendance.get_current_user] = lambda: {"tenant_id": str(MINE), "role": "Tenant Admin"}
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t"), calls
 
 
@@ -124,5 +129,5 @@ async def test_routes_pass_caller_tenant_and_return_404(route_calls, method):
                                     json=body if method == "PUT" else None)
 
     assert resp.status_code == 404
-    assert calls[0]["tenant_id"] == str(MINE)
-    assert calls[0]["geofence_id"] == geofence_id
+    assert calls[0]["tenant_id"] == MINE
+    assert str(calls[0]["geofence_id"]) == geofence_id
