@@ -7,10 +7,11 @@ POST   /rooms/{property_id}             → create room
 GET    /rooms/detail/{room_id}          → get single room
 PUT    /rooms/{room_id}                 → update room
 DELETE /rooms/{room_id}                 → delete room
+GET    /rooms/{property_id}/live-summary → current booking per room + source counts
 
 Bookings:
 POST   /rooms/{property_id}/bookings          → create booking
-GET    /rooms/{property_id}/bookings          → list all bookings
+GET    /rooms/{property_id}/bookings          → list bookings (?status, ?active_only)
 GET    /rooms/bookings/detail/{booking_id}    → get single booking
 PUT    /rooms/bookings/{booking_id}           → update booking
 PUT    /rooms/bookings/{booking_id}/checkin   → check in
@@ -45,6 +46,36 @@ class BulkStatusUpdate(BaseModel):
     room_ids: List[str]
     status: str
 ROOM_PRICES = {"Standard": Decimal("2500"), "Deluxe": Decimal("4500"), "Suite": Decimal("8000"), "Executive": Decimal("6000")}
+
+
+class LiveBooking(BaseModel):
+    booking_id: UUID
+    status: str
+    guest_name: Optional[str]
+    booking_source: Optional[str]
+    check_in: datetime
+    check_out: datetime
+    stay_progress_pct: float
+    special_requests: Optional[str]
+    total_amount: Optional[float]
+    currency: Optional[str]
+
+
+class RoomLive(BaseModel):
+    room_id: UUID
+    current_booking: Optional[LiveBooking]
+
+
+class SourceCount(BaseModel):
+    source: Optional[str]  # None when the booking has no booking_source
+    count: int
+
+
+class LiveSummary(BaseModel):
+    generated_at: datetime
+    active_bookings: int
+    rooms: List[RoomLive]
+    source_counts: List[SourceCount]
 
 router = APIRouter(prefix="/rooms", tags=["Rooms & Bookings"])
 
@@ -245,6 +276,84 @@ async def delete_room(
     room.deleted_at = datetime.utcnow()
     await db.commit()
     return {"message": "Room deleted successfully"}
+
+
+# ── Live summary (room cards) ────────────────────────────────────────────────
+
+def _stay_progress(check_in: datetime, check_out: datetime, now: datetime) -> float:
+    """Share of the stay already elapsed, 0-100, one decimal."""
+    total = (check_out - check_in).total_seconds()
+    if total <= 0:
+        return 100.0
+    elapsed = (now - check_in).total_seconds() / total
+    return round(min(max(elapsed, 0.0), 1.0) * 100, 1)
+
+
+@router.get("/{property_id}/live-summary", response_model=LiveSummary)
+async def get_live_summary(
+    property_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Room cards: each room's current booking (stay under way now, status
+    booked or checked_in) or null, plus active-booking counts per
+    booking_source. One rooms query and one bookings query.
+    """
+    tenant_id = UUID(user["tenant_id"])
+    await _require_property(db, property_id, tenant_id)
+    now = datetime.utcnow()  # check_in/check_out are naive TIMESTAMP columns
+
+    room_ids = (await db.execute(
+        select(Room.id).where(
+            Room.property_id == property_id,
+            Room.tenant_id == tenant_id,
+            Room.deleted_at == None,
+        ).order_by(func.length(Room.room_number), Room.room_number, Room.id)
+    )).scalars().all()
+
+    bookings = (await db.execute(
+        select(Booking).where(
+            Booking.property_id == property_id,
+            Booking.tenant_id == tenant_id,
+            Booking.deleted_at == None,
+            _active_at(now),
+        ).order_by(Booking.check_in.desc(), Booking.id)
+    )).scalars().all()
+
+    # Overlaps are blocked on create, but if a room still has several active
+    # bookings, show the checked-in one, else the latest check-in.
+    current = {}
+    for b in bookings:
+        prev = current.get(b.room_id)
+        if prev is None or (prev.status != "checked_in" and b.status == "checked_in"):
+            current[b.room_id] = b
+
+    counts = {}
+    for b in bookings:
+        source = (b.booking_source or "").strip() or None
+        counts[source] = counts.get(source, 0) + 1
+
+    def live(b: Optional[Booking]) -> Optional[LiveBooking]:
+        if b is None:
+            return None
+        return LiveBooking(
+            booking_id=b.id, status=b.status, guest_name=b.customer_name,
+            booking_source=b.booking_source, check_in=b.check_in, check_out=b.check_out,
+            stay_progress_pct=_stay_progress(b.check_in, b.check_out, now),
+            special_requests=b.special_requests,
+            total_amount=b.total_amount, currency=b.currency,
+        )
+
+    return LiveSummary(
+        generated_at=now,
+        active_bookings=len(bookings),
+        rooms=[RoomLive(room_id=rid, current_booking=live(current.get(rid))) for rid in room_ids],
+        source_counts=[
+            SourceCount(source=s, count=c)
+            for s, c in sorted(counts.items(), key=lambda item: (-item[1], item[0] is None, item[0] or ""))
+        ],
+    )
 
 
 # ── Bulk Status Update ───────────────────────────────────────────────────────
