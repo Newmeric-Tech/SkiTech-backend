@@ -43,13 +43,13 @@ async def test_punch_out_inside_stores_its_location(db):
     assert record.distance_meters == 5.0  # punch-in distance unchanged
 
 
-async def test_borderline_punch_out_is_stored_as_outside(db):
-    # 280 m with 90 m accuracy is accepted (280 - 90 <= 200) but is beyond
-    # radius + the 50 m boundary buffer, so it is recorded as outside.
+async def test_borderline_punch_out_is_stored_as_inside(db):
+    # 280 m with 90 m accuracy: 280 - 90 <= 200, so accepted and, by the same
+    # rule, stored as inside (it used to be stored as outside).
     record, _, _ = await AttendanceService.create_punch_out(db, USER, PROPERTY, TENANT, punch_out(280, accuracy=90))
 
     assert record.status == "completed"
-    assert record.punch_out_within_fence is False
+    assert record.punch_out_within_fence is True
     assert 275 < record.punch_out_distance_meters < 285
 
 

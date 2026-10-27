@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import AttendanceRecord, PropertyGeofence
 from app.schemas.attendance import GeolocationData, PunchInRequest, PunchOutRequest, PropertyGeofenceCreate
-from app.utils.geolocation import is_within_geofence, validate_coordinates, get_accuracy_warning
+from app.utils.geolocation import haversine_distance, validate_coordinates, get_accuracy_warning
 
 # An open record (status "active", no punch-out) older than this is a
 # forgotten punch-out, not a shift: it is closed as AUTO_CLOSED with
@@ -67,6 +67,18 @@ async def _open_records(db: AsyncSession, user_id, property_id, tenant_id) -> Li
     return list(result.scalars().all())
 
 
+def is_inside_fence(distance: float, accuracy: Optional[float], radius_meters: float) -> bool:
+    """
+    The one definition of "inside" for punches: the GPS accuracy circle
+    reaches the geofence, i.e. distance - accuracy <= radius. A missing
+    accuracy counts as 0. Used both to accept a punch and for the stored
+    is_within_fence / punch_out_within_fence flags, so an accepted punch is
+    never stored as outside. (is_within_geofence's 50 m boundary buffer is
+    not used for punches.)
+    """
+    return distance - (accuracy or 0.0) <= radius_meters
+
+
 async def check_punch_location(
     db: AsyncSession, property_id: str, tenant_id: str, geolocation: GeolocationData
 ) -> Tuple[bool, float]:
@@ -76,8 +88,8 @@ async def check_punch_location(
     for the user; callers must not write anything before this passes.
 
     Rejected: no geofence for the property (in the caller's tenant), GPS
-    accuracy worse than get_accuracy_warning's 100 m threshold, or definitely
-    outside: distance - accuracy > radius. A missing accuracy counts as 0.
+    accuracy worse than get_accuracy_warning's 100 m threshold, or outside
+    by is_inside_fence. An accepted punch is therefore always inside.
     """
     is_valid, error_msg = validate_coordinates(
         geolocation.latitude, geolocation.longitude, geolocation.accuracy,
@@ -99,17 +111,15 @@ async def check_punch_location(
             f"GPS accuracy too low ({geolocation.accuracy:.0f} m), move to an open area and try again."
         )
 
-    is_within, distance, _ = is_within_geofence(
-        geolocation.latitude, geolocation.longitude,
-        geofence.center_lat, geofence.center_lng, geofence.radius_meters,
+    distance = haversine_distance(
+        geolocation.latitude, geolocation.longitude, geofence.center_lat, geofence.center_lng,
     )
-    accuracy = geolocation.accuracy or 0.0
-    if distance - accuracy > geofence.radius_meters:
+    if not is_inside_fence(distance, geolocation.accuracy, geofence.radius_meters):
         raise ValueError(
             f"You are {distance:.0f} m from the property; punches are only allowed within "
             f"{geofence.radius_meters} m. Move closer and try again."
         )
-    return is_within, distance
+    return True, distance
 
 
 class AttendanceService:

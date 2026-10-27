@@ -185,3 +185,32 @@ async def test_unexpected_error_text_is_not_returned(monkeypatch):
 
     assert resp.status_code == 500
     assert "secret" not in resp.text and "SQL" not in resp.text
+
+
+# ── One definition of "inside" ─────────────────────────────────────────────
+
+from app.services.attendance_service import is_inside_fence
+
+
+def test_inside_rule():
+    assert is_inside_fence(200, 0, 200)          # on the edge
+    assert not is_inside_fence(200.5, 0, 200)    # no hidden 50 m buffer
+    assert is_inside_fence(280, 80, 200)         # accuracy circle reaches the fence
+    assert not is_inside_fence(281, 80, 200)
+    assert is_inside_fence(150, None, 200)       # missing accuracy counts as 0
+
+
+@pytest.mark.parametrize("meters, accuracy", [(0, 5), (190, 5), (240, 60), (290, 95)])
+async def test_every_accepted_punch_in_is_stored_inside(db, meters, accuracy):
+    record, _, _ = await _in(db, punch_in(meters, accuracy=accuracy))
+
+    assert record.is_within_fence is True
+    assert abs(record.distance_meters - meters) < 2
+
+
+@pytest.mark.parametrize("meters, accuracy", [(215, 10), (240, 30)])
+async def test_inside_old_buffer_but_outside_rule_is_rejected(db, meters, accuracy):
+    # Within radius + 50 m (the old "inside" flag) but distance - accuracy > radius
+    with pytest.raises(ValueError):
+        await _in(db, punch_in(meters, accuracy=accuracy))
+    assert all_records(db) == []
