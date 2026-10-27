@@ -65,12 +65,15 @@ def _scope_query(q, ctx: dict):
         if ctx["property_id"]:
             q = q.where(InboxItem.property_id == ctx["property_id"])
     elif ctx["tier"] == "manager":
-        q = q.where(or_(
-            InboxItem.recipient_role == "manager",
-            InboxItem.recipient_user_id == ctx["user_id"],
-        ))
         if ctx["property_id"]:
-            q = q.where(InboxItem.property_id == ctx["property_id"])
+            q = q.where(or_(
+                InboxItem.recipient_role == "manager",
+                InboxItem.recipient_user_id == ctx["user_id"],
+            )).where(InboxItem.property_id == ctx["property_id"])
+        else:
+            # No assigned property: role-wide "manager" items belong to some
+            # property, so only items addressed to this user personally.
+            q = q.where(InboxItem.recipient_user_id == ctx["user_id"])
     else:
         q = q.where(InboxItem.recipient_user_id == ctx["user_id"])
 
