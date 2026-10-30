@@ -4,7 +4,8 @@ and service on in-memory SQLite. The last test runs the main flow on a throwaway
 local Postgres (skipped without LOCAL_PG_URL), which is the only place a lazy
 load after commit would fail. Never touches the .env database.
 """
-from datetime import date, datetime, timedelta
+import asyncio
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -21,7 +22,7 @@ from app.api.v1.endpoints import kra_tasks
 from app.core.database import get_db
 from app.models.base import Base
 from app.models.kra_tasks import KraAssignment, KraOccurrence
-from app.services.kra_task_service import ensure_occurrences
+from app.services.kra_task_service import assign_users, ensure_occurrences
 from tests.kra_tasks_harness import (
     assignment_row, definition_row, property_row, role_rows, sqlite_db, user_row,
 )
@@ -670,5 +671,63 @@ async def test_main_flow_on_postgres():
                 assert ended.status_code == 200 and ended.json()["is_active"] is False, ended.text
                 off = await c.put(f"/kra-tasks/definitions/{definition_id}", json={"is_active": False})
                 assert off.status_code == 200, off.text
+        finally:
+            await engine.dispose()
+
+
+# ── errors and races ────────────────────────────────────────────────────────
+
+async def test_unexpected_error_is_generic_and_logged_without_its_text(world, monkeypatch, caplog):
+    secret = "Failing row contains (guest@leak.test)"
+
+    async def explode(*args, **kwargs):
+        raise RuntimeError(secret)
+    monkeypatch.setattr(kra_tasks.tasks, "create_definition", explode)
+    async with as_manager(world) as c:
+        res = await c.post("/kra-tasks/definitions", json=payload(world))
+    assert res.status_code == 500
+    assert res.json() == {"detail": "An unexpected error occurred."}
+    assert "[KRA TASKS] create_definition failed" in caplog.text
+    assert secret not in caplog.text
+
+
+async def test_scoped_co_admin_only_sees_own_property(world):
+    mine = new_definition(world)
+    other = new_definition(world, prop=world.other_prop)
+    async with client(world, token(world.co_admin, "Co Admin")) as c:
+        assert [d["id"] for d in (await c.get("/kra-tasks/definitions")).json()] == [str(mine.id)]
+        assert (await c.put(f"/kra-tasks/definitions/{other.id}", json={"title": "x"})).status_code == 404
+    async with client(world, token(world.tenant_co_admin, "Co Admin")) as c:
+        assert len((await c.get("/kra-tasks/definitions")).json()) == 2
+
+
+async def test_two_assigns_at_once_make_one_assignment_on_postgres():
+    async with throwaway_database() as url:
+        engine = create_async_engine(url, poolclass=NullPool, connect_args={
+            "server_settings": {"session_replication_role": "replica"}})
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            sessions = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+            pending = []
+            w = build_world(pending.append)
+            definition = definition_row(TENANT, w.prop.id)
+            pending.append([definition])
+            for rows in pending:
+                async with sessions() as session:
+                    session.add_all(rows)
+                    await session.commit()
+
+            async def assign_once():
+                async with sessions() as session:
+                    created, skipped = await assign_users(
+                        session, token(w.manager, "Manager"), definition.id, [w.staff.id], TODAY)
+                    return len(created), len(skipped)
+
+            results = await asyncio.gather(*[assign_once() for _ in range(5)])
+            assert sum(created for created, _ in results) == 1
+            assert sum(skipped for _, skipped in results) == 4
+            async with sessions() as session:
+                assert (await session.execute(select(func.count()).select_from(KraAssignment))).scalar() == 1
         finally:
             await engine.dispose()
