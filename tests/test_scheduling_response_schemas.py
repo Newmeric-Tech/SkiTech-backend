@@ -22,13 +22,13 @@ from sqlalchemy.pool import NullPool, StaticPool
 from app.api.v1.endpoints import scheduling
 from app.models.base import Base
 from app.models.models import (
-    Employee, EmployeeAvailability, ReplacementRequest, ShiftAssignment, WeeklySchedule,
+    Department, Employee, EmployeeAvailability, ReplacementRequest, ShiftAssignment, WeeklySchedule,
 )
 from tests.attendance_sqlite import AsyncSQLite
 
 TENANT, PROPERTY, USER = uuid4(), uuid4(), uuid4()
 EMP, OTHER_EMP = uuid4(), uuid4()
-SCHEDULE, SHIFT, REQUEST, AVAILABILITY = uuid4(), uuid4(), uuid4(), uuid4()
+SCHEDULE, SHIFT, REQUEST, AVAILABILITY, DEPARTMENT = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
 NOW = datetime(2026, 10, 28, 9, 0)
 DAY = "2026-11-20T00:00:00"
 WEEK = {"week_start": "2026-10-26T00:00:00", "week_end": "2026-11-01T00:00:00"}
@@ -310,3 +310,31 @@ async def test_create_schedule_answers_200_on_async_driver(pg_client):
     assert res.status_code == 200
     assert res.json()["employee_id"] == str(OTHER_EMP)
     assert res.json()["shift_assignments"] == []
+
+
+async def add_time_off(sessions):
+    async with sessions() as session:
+        session.add(Department(id=DEPARTMENT, tenant_id=TENANT, property_id=PROPERTY, name="Front Desk"))
+        (await session.get(Employee, EMP)).department_id = DEPARTMENT
+        (await session.get(EmployeeAvailability, AVAILABILITY)).status = "off"
+        await session.commit()
+
+
+async def test_conflicts_route_reports_employee_off_on_shift_day(pg_client):
+    await add_time_off(pg_client.sessions)
+    res = await pg_client.client.get(f"/scheduling/schedules/{SCHEDULE}/conflicts")
+    assert res.status_code == 200
+    assert res.json()["conflict_count"] == 1
+    conflict = res.json()["conflicts"][0]
+    assert conflict["employee_name"] == "A B" and conflict["department"] == "Front Desk"
+    assert conflict["shift_assignment_id"] == str(SHIFT)
+
+
+async def test_manager_dashboard_lists_conflict_as_critical_action(pg_client):
+    await add_time_off(pg_client.sessions)
+    async with pg_client.sessions() as session:
+        (await session.get(WeeklySchedule, SCHEDULE)).status = "assigned"
+        await session.commit()
+    res = await pg_client.client.get("/scheduling/dashboard/manager", params=WEEK)
+    assert res.status_code == 200
+    assert res.json()["critical_actions"][0]["employee_name"] == "A B"

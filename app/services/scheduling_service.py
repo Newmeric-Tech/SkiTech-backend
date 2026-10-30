@@ -207,6 +207,8 @@ class SchedulingService:
         conflicts = []
         stmt = select(ShiftAssignment).where(
             ShiftAssignment.schedule_id == schedule_id
+        ).options(
+            selectinload(ShiftAssignment.employee).selectinload(Employee.department)
         )
         result = await self.db.execute(stmt)
         shift_assignments = result.scalars().all()
