@@ -538,7 +538,7 @@ class SchedulingService:
         pending_requests = result.scalars().all()
 
         # Get current week schedule
-        today = datetime.utcnow()
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
 

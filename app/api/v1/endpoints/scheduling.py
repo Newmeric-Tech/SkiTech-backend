@@ -165,7 +165,7 @@ async def list_schedules(
     to the current week. Powers the manager schedule grid."""
     from datetime import timedelta
     if week_start is None:
-        today = datetime.utcnow()
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today - timedelta(days=today.weekday())
     if week_end is None:
         week_end = week_start + timedelta(days=6)
@@ -403,7 +403,7 @@ async def get_manager_dashboard(
     """Get manager dashboard data (defaults to current week)"""
     from datetime import timedelta
     if week_start is None:
-        today = datetime.utcnow()
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today - timedelta(days=today.weekday())
     if week_end is None:
         week_end = week_start + timedelta(days=6)

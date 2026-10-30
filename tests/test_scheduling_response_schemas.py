@@ -350,3 +350,41 @@ async def test_recommendations_include_department_of_candidate(pg_client):
         json={"shift_date": DAY, "shift_start_time": "09:00", "shift_end_time": "17:00"})
     assert res.status_code == 200
     assert res.json()["recommendations"][0]["department"] == "Front Desk"
+
+
+def current_monday():
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return today - timedelta(days=today.weekday())
+
+
+async def test_default_week_finds_schedule_starting_monday_midnight(env):
+    db, client = env
+    row = db.session.get(WeeklySchedule, SCHEDULE)
+    row.week_start_date, row.week_end_date = current_monday(), current_monday() + timedelta(days=6)
+    db.session.commit()
+    async with client:
+        res = await client.get("/scheduling/schedules")
+    assert res.status_code == 200
+    assert [s["id"] for s in res.json()] == [str(SCHEDULE)]
+
+
+async def test_me_finds_schedule_starting_monday_midnight(env):
+    db, client = env
+    row = db.session.get(WeeklySchedule, SCHEDULE)
+    row.week_start_date, row.week_end_date = current_monday(), current_monday() + timedelta(days=6)
+    db.session.commit()
+    async with client:
+        res = await client.get("/scheduling/me")
+    assert res.status_code == 200
+    assert res.json()["current_week_schedule"]["id"] == str(SCHEDULE)
+
+
+async def test_manager_dashboard_default_week_counts_monday_schedule(pg_client):
+    async with pg_client.sessions() as session:
+        row = await session.get(WeeklySchedule, SCHEDULE)
+        row.week_start_date, row.week_end_date = current_monday(), current_monday() + timedelta(days=6)
+        row.status = "assigned"
+        await session.commit()
+    res = await pg_client.client.get("/scheduling/dashboard/manager")
+    assert res.status_code == 200
+    assert res.json()["weekly_schedule_count"] == 1
