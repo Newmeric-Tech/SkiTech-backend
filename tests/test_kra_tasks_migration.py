@@ -73,13 +73,13 @@ async def test_both_orders_end_with_the_same_schema():
     async with throwaway_database() as existing, throwaway_database() as missing:
         await build(existing, with_kra_tables=True)
         before, before_shape = await state(existing)
-        alembic(existing, "upgrade", "head")
+        alembic(existing, "upgrade", "030_kra_tasks")
         after, after_shape = await state(existing)
         assert before == "029_attendance_corrections" and after == "030_kra_tasks"
         assert after_shape == before_shape   # only the version moved
 
         await build(missing, with_kra_tables=False)
-        alembic(missing, "upgrade", "head")
+        alembic(missing, "upgrade", "030_kra_tasks")
         version, missing_shape = await state(missing)
         assert version == "030_kra_tasks"
         assert missing_shape == after_shape
@@ -88,10 +88,10 @@ async def test_both_orders_end_with_the_same_schema():
 async def test_rerun_and_downgrade_round_trip():
     async with throwaway_database() as url:
         await build(url, with_kra_tables=False)
-        alembic(url, "upgrade", "head")
+        alembic(url, "upgrade", "030_kra_tasks")
         _, first = await state(url)
         alembic(url, "downgrade", "029_attendance_corrections")
         version, gone = await state(url)
         assert version == "029_attendance_corrections" and gone == ([], [], [])
-        alembic(url, "upgrade", "head")
+        alembic(url, "upgrade", "030_kra_tasks")
         assert (await state(url))[1] == first
