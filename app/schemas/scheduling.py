@@ -4,6 +4,7 @@ Pydantic schemas for Employee Scheduling APIs
 
 from datetime import datetime
 from typing import Optional, List
+from uuid import UUID
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -75,9 +76,9 @@ class EmployeeAvailabilityCreate(EmployeeAvailabilityBase):
 
 
 class EmployeeAvailabilityResponse(EmployeeAvailabilityBase):
-    id: str
-    employee_id: str
-    property_id: str
+    id: UUID
+    employee_id: UUID
+    property_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -109,10 +110,10 @@ class ShiftAssignmentUpdate(BaseModel):
 
 
 class ShiftAssignmentResponse(ShiftAssignmentBase):
-    id: str
-    schedule_id: str
-    employee_id: str
-    property_id: str
+    id: UUID
+    schedule_id: UUID
+    employee_id: UUID
+    property_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -142,9 +143,11 @@ class WeeklyScheduleUpdate(BaseModel):
 
 
 class WeeklyScheduleResponse(WeeklyScheduleBase):
-    id: str
-    property_id: str
-    assigned_by: Optional[str] = None
+    employee_id: UUID
+    department_id: Optional[UUID] = None
+    id: UUID
+    property_id: UUID
+    assigned_by: Optional[UUID] = None
     assigned_at: Optional[datetime] = None
     published_at: Optional[datetime] = None
     shift_assignments: Optional[List[ShiftAssignmentResponse]] = []
@@ -187,15 +190,15 @@ class ReplacementRequestUpdate(BaseModel):
 
 
 class ReplacementRequestResponse(ReplacementRequestBase):
-    id: str
-    shift_assignment_id: str
-    original_employee_id: str
-    replacement_employee_id: Optional[str] = None
+    id: UUID
+    shift_assignment_id: UUID
+    original_employee_id: UUID
+    replacement_employee_id: Optional[UUID] = None
     request_date: datetime
     status: ReplacementRequestStatus
     ai_recommended: bool
-    created_by: Optional[str] = None
-    responded_by: Optional[str] = None
+    created_by: Optional[UUID] = None
+    responded_by: Optional[UUID] = None
     responded_at: Optional[datetime] = None
     response_reason: Optional[str] = None
     created_at: datetime
