@@ -18,6 +18,7 @@ from app.models.ranking_models import (
     RankingAuditLog, RankingInsight,
 )
 from app.models.kra import DailyKRA, WeeklyKRA, MonthlyKRA, QuarterlyKRA
+from app.models.kra_tasks import KraDefinition, KraAssignment, KraOccurrence
 from app.models.workforce_entry import WorkforceEntry
 from app.models.channel_manager import Integration, SyncLog, Reservation
 from app.models.inbox import InboxItem
@@ -35,6 +36,7 @@ __all__ = [
     "RankingCriteriaConfig", "EmployeeRankingScore", "EmployeeRanking",
     "RankingAuditLog", "RankingInsight",
     "DailyKRA", "WeeklyKRA", "MonthlyKRA", "QuarterlyKRA",
+    "KraDefinition", "KraAssignment", "KraOccurrence",
     "WorkforceEntry",
     "Integration", "SyncLog", "Reservation",
     "InboxItem",
