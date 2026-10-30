@@ -15,6 +15,7 @@ Implements 8-category ranking system:
 """
 
 from datetime import datetime, timedelta
+import logging
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 import statistics
@@ -35,6 +36,9 @@ from app.schemas.ranking_schemas import (
 )
 from app.services.kra_task_service import ensure_occurrences
 from app.utils.exceptions import NotFound, ValidationError
+from app.utils.safe_errors import log_safe_exception
+
+logger = logging.getLogger("skitech")
 
 
 # ===========================================================
@@ -322,13 +326,23 @@ class RankingService:
 
         # Get all criteria for property
         criteria_list = await self.criteria_repo.get_criteria_by_property(tenant_id, employee.property_id)
-        
+
+        # KRA Completion is calculated, unlike the manually entered criteria
+        kra_applies = True
+        kra_criterion = next((c for c in criteria_list if c.criterion_name == KRA_CRITERION), None)
+        if kra_criterion:
+            kra_applies = await self.store_kra_score(tenant_id, employee, kra_criterion, period_start, period_end)
+
         # Fetch scores for each criterion
         scores_breakdown = {}
         total_weighted_score = 0.0
         total_weightage = 0.0
-        
+
         for criterion in criteria_list:
+            if criterion.criterion_name == KRA_CRITERION and not kra_applies:
+                # Not a zero: left out, and the other weights scale up
+                continue
+
             score = await self.scores_repo.get_score_by_criterion_period(
                 tenant_id=tenant_id,
                 employee_id=employee_id,
@@ -351,15 +365,17 @@ class RankingService:
                 scores_breakdown[criterion.criterion_name] = 0.0
                 total_weightage += criterion.weightage
         
-        # Final overall score
-        overall_score = total_weighted_score if total_weightage == 100 else total_weighted_score
+        # Final overall score, out of 100 whatever weight the applicable criteria total
+        overall_score = total_weighted_score / total_weightage * 100 if total_weightage else 0.0
         overall_score = max(0, min(100, overall_score))
-        
-        # Get previous score for trend
-        previous_ranking = await self.ranking_repo.get_employee_ranking(
+
+        # Get previous score for trend (not this period's own row when re-running)
+        previous_ranking = await self.ranking_repo.get_previous_ranking(
             tenant_id=tenant_id,
             employee_id=employee_id,
-            ranking_type=ranking_type
+            ranking_type=ranking_type,
+            period_start=period_start,
+            period_end=period_end
         )
         
         previous_score = previous_ranking.overall_score if previous_ranking else None
@@ -372,23 +388,44 @@ class RankingService:
             overall_score, score_change, previous_ranking
         )
         
-        # Create ranking record
-        ranking = await self.ranking_repo.create_ranking(
-            tenant_id=employee.tenant_id,
-            property_id=employee.property_id,
+        # Update this period's ranking when re-running (uq_employee_period_ranking), else create it
+        existing_ranking = await self.ranking_repo.get_ranking_for_period(
+            tenant_id=tenant_id,
             employee_id=employee_id,
-            user_id=employee.user_id,
-            period_start=period_start,
-            period_end=period_end,
             ranking_type=ranking_type,
-            overall_score=overall_score,
-            rank=1,  # Provisional (check_rank requires rank >= 1); recalculate_property_rankings sets the real rank
-            total_active_employees=0,  # Will be updated
-            scores_breakdown=scores_breakdown,
-            performance_status=performance_status,
-            previous_overall_score=previous_score,
-            score_change=score_change
+            period_start=period_start,
+            period_end=period_end
         )
+        if existing_ranking:
+            ranking = await self.ranking_repo.update_ranking(
+                tenant_id,
+                existing_ranking.id,
+                property_id=employee.property_id,
+                user_id=employee.user_id,
+                overall_score=overall_score,
+                scores_breakdown=scores_breakdown,
+                performance_status=performance_status,
+                previous_overall_score=previous_score,
+                score_change=score_change,
+                recalculated_at=datetime.utcnow()
+            )
+        else:
+            ranking = await self.ranking_repo.create_ranking(
+                tenant_id=employee.tenant_id,
+                property_id=employee.property_id,
+                employee_id=employee_id,
+                user_id=employee.user_id,
+                period_start=period_start,
+                period_end=period_end,
+                ranking_type=ranking_type,
+                overall_score=overall_score,
+                rank=1,  # Provisional (check_rank requires rank >= 1); recalculate_property_rankings sets the real rank
+                total_active_employees=0,  # Will be updated
+                scores_breakdown=scores_breakdown,
+                performance_status=performance_status,
+                previous_overall_score=previous_score,
+                score_change=score_change
+            )
         
         # Log action
         await self.audit_repo.log_action(
@@ -446,27 +483,29 @@ class RankingService:
                 )
             )
         )
-        employees = result.scalars().all()
-        
-        if not employees:
+        employee_ids = [employee.id for employee in result.scalars().all()]
+
+        if not employee_ids:
             raise NotFound(f"No active employees in property {property_id}")
-        
-        # Calculate for each employee
+
+        # Calculate for each employee. The savepoint keeps one employee's database
+        # error from aborting the transaction the others share.
         rankings = []
-        for employee in employees:
+        for employee_id in employee_ids:
             try:
-                ranking = await self.calculate_employee_ranking(
-                    tenant_id=tenant_id,
-                    employee_id=employee.id,
-                    property_id=property_id,
-                    period_start=period_start,
-                    period_end=period_end,
-                    ranking_type=ranking_type
-                )
+                async with self.session.begin_nested():
+                    ranking = await self.calculate_employee_ranking(
+                        tenant_id=tenant_id,
+                        employee_id=employee_id,
+                        property_id=property_id,
+                        period_start=period_start,
+                        period_end=period_end,
+                        ranking_type=ranking_type
+                    )
                 rankings.append(ranking)
             except Exception as e:
                 # Continue with next employee
-                pass
+                log_safe_exception(logger, f"[RANKING] calculation failed for employee {employee_id}", e)
         
         # Sort by overall_score descending and assign ranks
         rankings.sort(key=lambda r: r.overall_score, reverse=True)
@@ -629,6 +668,9 @@ class RankingService:
         criteria_list = await self.criteria_repo.get_criteria_by_property(tenant_id, ranking.property_id)
         
         for criterion in criteria_list:
+            if criterion.criterion_name == KRA_CRITERION and KRA_CRITERION not in ranking.scores_breakdown:
+                continue  # not applicable to this employee, which is not a zero
+
             score = ranking.scores_breakdown.get(criterion.criterion_name, 0)
             weighted_score = score * (criterion.weightage / 100)
             

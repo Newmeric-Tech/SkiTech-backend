@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 from uuid import UUID
 
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ranking_models import (
@@ -336,6 +336,45 @@ class EmployeeRankingRepository:
             )
         
         result = await self.session.execute(query.order_by(desc(EmployeeRanking.created_at)).limit(1))
+        return result.scalar_one_or_none()
+
+    async def get_ranking_for_period(
+        self,
+        tenant_id: UUID,
+        employee_id: UUID,
+        ranking_type: str,
+        period_start: datetime,
+        period_end: datetime
+    ) -> Optional[EmployeeRanking]:
+        """The ranking for exactly this period, if already calculated"""
+        result = await self.session.execute(
+            select(EmployeeRanking).where(
+                EmployeeRanking.tenant_id == tenant_id,
+                EmployeeRanking.employee_id == employee_id,
+                EmployeeRanking.ranking_type == ranking_type,
+                EmployeeRanking.period_start == period_start,
+                EmployeeRanking.period_end == period_end
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_previous_ranking(
+        self,
+        tenant_id: UUID,
+        employee_id: UUID,
+        ranking_type: str,
+        period_start: datetime,
+        period_end: datetime
+    ) -> Optional[EmployeeRanking]:
+        """The newest ranking of any other period"""
+        result = await self.session.execute(
+            select(EmployeeRanking).where(
+                EmployeeRanking.tenant_id == tenant_id,
+                EmployeeRanking.employee_id == employee_id,
+                EmployeeRanking.ranking_type == ranking_type,
+                or_(EmployeeRanking.period_start != period_start, EmployeeRanking.period_end != period_end)
+            ).order_by(desc(EmployeeRanking.created_at)).limit(1)
+        )
         return result.scalar_one_or_none()
 
     async def get_top_performers(

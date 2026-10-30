@@ -301,3 +301,163 @@ async def test_ended_and_reassigned_task_counts_once(w):
     w.db.session.commit()
     await store(w)
     assert stored(w)[0].evidence["counted"] == 1 and stored(w)[0].raw_points == 100.0
+
+
+# ── ranking calculation ─────────────────────────────────────────────────────
+
+def manual_score(w, name, points=100.0, employee=None):
+    w.db.session.add(EmployeeRankingScore(
+        id=uuid4(), tenant_id=TENANT, property_id=w.prop.id, employee_id=(employee or w.employee).id,
+        criterion_name=name, weightage=1.0, raw_points=points, final_points=points, max_points=100.0,
+        period_start=START, period_end=END))
+    w.db.session.commit()
+
+
+OTHERS = [c["criterion_name"] for c in DEFAULT_CRITERIA if c["criterion_name"] != KRA_CRITERION]
+
+
+async def calculate(w, employee=None):
+    ranking = await w.service.calculate_employee_ranking(TENANT, (employee or w.employee).id, w.prop.id, START, END)
+    w.db.session.commit()
+    return ranking
+
+
+async def test_no_tasks_scales_the_other_weights_to_100(w):
+    for name in OTHERS:
+        manual_score(w, name)
+    ranking = await calculate(w)
+    assert ranking.overall_score == pytest.approx(100)
+    assert KRA_CRITERION not in ranking.scores_breakdown
+    assert stored(w) == []
+
+
+async def test_employee_without_user_scales_too(w):
+    for name in OTHERS:
+        manual_score(w, name)
+    w.employee.user_id = None
+    w.db.session.commit()
+    ranking = await calculate(w)
+    assert ranking.overall_score == pytest.approx(100) and KRA_CRITERION not in ranking.scores_breakdown
+
+
+async def test_kra_score_feeds_the_overall_at_its_weight(w):
+    for name in OTHERS:
+        manual_score(w, name)
+    give(w, done(DAY), missed(DAY + timedelta(days=1)))
+    ranking = await calculate(w)
+    assert ranking.scores_breakdown[KRA_CRITERION] == 50.0
+    assert ranking.overall_score == pytest.approx(95)   # 90 + 50% of 10
+
+
+async def test_missing_manual_score_still_counts_as_zero(w):
+    manual_score(w, "Task Completion")
+    give(w, done(DAY))
+    ranking = await calculate(w)
+    assert ranking.scores_breakdown["Attendance & Functionality"] == 0.0
+    assert ranking.overall_score == pytest.approx(25)   # Task Completion 15 + KRA 10
+
+
+async def test_missing_manual_score_counts_as_zero_when_kra_does_not_apply(w):
+    manual_score(w, "Task Completion")
+    ranking = await calculate(w)
+    assert ranking.scores_breakdown["Attendance & Functionality"] == 0.0
+    assert ranking.overall_score == pytest.approx(15 / 90 * 100)
+
+
+async def test_other_criteria_keep_their_manual_scores(w):
+    manual_score(w, "Attendance & Functionality", 80.0)
+    give(w, done(DAY))
+    ranking = await calculate(w)
+    assert ranking.scores_breakdown["Attendance & Functionality"] == 80.0
+    rows = w.db.session.execute(select(EmployeeRankingScore).where(
+        EmployeeRankingScore.criterion_name == "Attendance & Functionality")).scalars().all()
+    assert len(rows) == 1 and rows[0].raw_points == 80.0
+
+
+async def test_property_without_the_kra_criterion_is_unaffected(w):
+    w.db.session.delete(kra_criterion(w))
+    w.db.session.commit()
+    for name in OTHERS:
+        manual_score(w, name)
+    give(w, missed(DAY))
+    ranking = await calculate(w)
+    assert ranking.overall_score == pytest.approx(100) and stored(w) == []
+
+
+async def test_overall_is_clamped_to_100(w):
+    for criterion in w.db.session.execute(select(RankingCriteriaConfig)).scalars():
+        criterion.max_points = 50.0
+    w.db.session.commit()
+    for name in OTHERS:
+        manual_score(w, name)
+    ranking = await calculate(w)
+    assert ranking.overall_score == 100
+
+
+async def test_rerunning_a_period_updates_one_ranking_and_one_score(w):
+    for name in OTHERS:
+        manual_score(w, name)
+    give(w, missed(DAY))
+    first = await calculate(w)
+    assert first.scores_breakdown[KRA_CRITERION] == 0.0 and first.overall_score == pytest.approx(90)
+
+    occurrence = w.db.session.execute(select(KraOccurrence)).scalar_one()
+    occurrence.status, occurrence.completed_at = "completed", at(DAY)
+    w.db.session.commit()
+    second = await calculate(w)
+
+    assert second.id == first.id and second.overall_score == pytest.approx(100)
+    assert second.scores_breakdown[KRA_CRITERION] == 100.0
+    assert second.recalculated_at is not None
+    assert second.previous_overall_score is None and second.score_change is None   # not compared with itself
+    assert len(stored(w)) == 1
+    assert w.db.session.execute(select(func.count()).select_from(EmployeeRanking)).scalar() == 1
+
+
+async def test_detail_and_portal_leave_out_kra_when_not_applicable(w):
+    for name in OTHERS:
+        manual_score(w, name)
+    await calculate(w)
+    detail = await w.service.get_employee_ranking_detail(TENANT, w.employee.id)
+    assert KRA_CRITERION not in [s.criterion_name for s in detail.scores_breakdown]
+    assert len(detail.scores_breakdown) == len(OTHERS)
+    portal = await w.service.get_performance_portal(TENANT, w.employee.id)
+    assert KRA_CRITERION not in portal.score_breakdown
+    assert portal.current_overall_score == pytest.approx(100)
+    items, _ = await w.service.get_rankings_for_property(TENANT, w.prop.id)
+    assert items[0].overall_score == pytest.approx(100)
+
+
+async def test_detail_and_portal_show_kra_when_applicable(w):
+    give(w, done(DAY))
+    await calculate(w)
+    detail = await w.service.get_employee_ranking_detail(TENANT, w.employee.id)
+    row_ = next(s for s in detail.scores_breakdown if s.criterion_name == KRA_CRITERION)
+    assert (row_.score, row_.weightage, row_.weighted_score) == (100.0, 10.0, 10.0)
+    portal = await w.service.get_performance_portal(TENANT, w.employee.id)
+    assert portal.score_breakdown[KRA_CRITERION] == 100.0
+
+
+async def test_recalculation_logs_a_failure_and_continues(w, monkeypatch, caplog):
+    other = Employee(id=uuid4(), tenant_id=TENANT, property_id=w.prop.id, role_id=uuid4(),
+                     first_name="O", last_name="K", is_active=True)
+    w.db.session.add(other)
+    w.db.session.commit()
+    real = w.service.calculate_employee_ranking
+    secret = "Failing row contains (guest@leak.test)"
+
+    async def sometimes(tenant_id, employee_id, **kwargs):
+        if employee_id == w.employee.id:
+            raise RuntimeError(secret)
+        return await real(tenant_id, employee_id, **kwargs)
+    monkeypatch.setattr(w.service, "calculate_employee_ranking",
+                        lambda tenant_id, employee_id, **kw: sometimes(tenant_id, employee_id, **kw))
+
+    result = await w.service.recalculate_property_rankings(TENANT, w.prop.id, START, END, "weekly")
+
+    assert set(result) == {"success", "total_calculated", "period"}
+    assert result["success"] is True and result["total_calculated"] == 1
+    assert f"[RANKING] calculation failed for employee {w.employee.id}" in caplog.text
+    assert secret not in caplog.text
+    rows = w.db.session.execute(select(EmployeeRanking)).scalars().all()
+    assert [r.employee_id for r in rows] == [other.id] and rows[0].rank == 1

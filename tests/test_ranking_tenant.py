@@ -7,6 +7,7 @@ stored. The caller's own tenant keeps working on every route.
 Route functions are called directly against an in-memory SQLite database;
 nothing touches the .env database.
 """
+from contextlib import asynccontextmanager
 from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -50,6 +51,11 @@ class AsyncSQLite:
 
     async def flush(self):
         self.s.flush()
+
+    @asynccontextmanager
+    async def begin_nested(self):
+        with self.s.begin_nested():
+            yield
 
     async def commit(self):
         self.s.commit()
