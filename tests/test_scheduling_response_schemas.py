@@ -4,18 +4,23 @@ returning a real row failed response validation. Real routes and service on
 in-memory SQLite (real tables behind the async-shaped wrapper). Never touches
 the .env database.
 """
-from datetime import datetime, timedelta
+import os
+from datetime import datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 
 from app.api.v1.endpoints import scheduling
+from app.models.base import Base
 from app.models.models import (
     Employee, EmployeeAvailability, ReplacementRequest, ShiftAssignment, WeeklySchedule,
 )
@@ -32,6 +37,9 @@ WEEK = {"week_start": "2026-10-26T00:00:00", "week_end": "2026-11-01T00:00:00"}
 class SchedulingDB(AsyncSQLite):
     def add_all(self, objs):
         self.session.add_all(objs)
+
+    async def refresh(self, obj, attribute_names=None):
+        self.session.refresh(obj, attribute_names)
 
 
 def seed_rows():
@@ -242,3 +250,63 @@ async def test_manager_dashboard_returns_pending_request(env):
         res = await client.get("/scheduling/dashboard/manager", params=WEEK)
     assert res.status_code == 200
     assert_request(res.json()["pending_responses"][0])
+
+
+# ---------------------------------------------------------------------------
+# Lazy loads only fail on a real async driver, so these run on a throwaway
+# database on a local Postgres (LOCAL_PG_URL), created and dropped per test.
+# Skipped when LOCAL_PG_URL is unset, is not local, or nothing answers.
+# ---------------------------------------------------------------------------
+
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+@pytest.fixture
+async def pg_client():
+    raw_url = os.environ.get("LOCAL_PG_URL")
+    if not raw_url:
+        pytest.skip("needs a local Postgres (LOCAL_PG_URL)")
+    url = make_url(raw_url)
+    if url.host not in LOCAL_HOSTS:
+        pytest.skip("LOCAL_PG_URL must point at localhost")
+
+    name = f"skitech_sched_test_{uuid4().hex}"
+    admin = create_async_engine(url, isolation_level="AUTOCOMMIT", poolclass=NullPool)
+    try:
+        async with admin.connect() as conn:
+            await conn.execute(text(f'CREATE DATABASE "{name}"'))
+    except (OSError, SQLAlchemyError) as exc:
+        await admin.dispose()
+        pytest.skip(f"local Postgres not available: {type(exc).__name__}")
+
+    # replica role: no foreign key triggers, so the tenant/property/user/role
+    # parents don't need seeding (superuser only, which a local server has).
+    engine = create_async_engine(url.set(database=name), poolclass=NullPool, connect_args={
+        "server_settings": {"session_replication_role": "replica"}})
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+        async with sessions() as session:
+            session.add_all(seed_rows())
+            await session.commit()
+
+        async def get_db():
+            async with sessions() as session:
+                yield session
+
+        async with make_app(get_db) as client:
+            yield SimpleNamespace(client=client, sessions=sessions)
+    finally:
+        await engine.dispose()
+        async with admin.connect() as conn:
+            await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        await admin.dispose()
+
+
+async def test_create_schedule_answers_200_on_async_driver(pg_client):
+    res = await pg_client.client.post("/scheduling/schedules", json={
+        "employee_id": str(OTHER_EMP), "week_start_date": DAY, "week_end_date": DAY, "status": "draft"})
+    assert res.status_code == 200
+    assert res.json()["employee_id"] == str(OTHER_EMP)
+    assert res.json()["shift_assignments"] == []

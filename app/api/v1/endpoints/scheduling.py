@@ -121,6 +121,7 @@ async def create_schedule(
         schedule = await service.create_weekly_schedule(UUID(data.employee_id), data)
         await db.commit()
         await db.refresh(schedule)
+        await db.refresh(schedule, ["shift_assignments"])
         return schedule
     except Exception as e:
         await db.rollback()
