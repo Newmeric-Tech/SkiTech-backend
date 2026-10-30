@@ -1,9 +1,10 @@
 """
 Employee Ranking System Models - app/models/ranking_models.py
 
-Implements the 7-category ranking system with weightages:
+Implements the 8-category ranking system with weightages:
 - Attendance & Functionality: 20%
-- Task Completion: 25%
+- Task Completion: 15%
+- KRA Completion: 10%
 - Task Quality & Cleanliness: 20%
 - Standby / Emergency Support: 10%
 - Overtime Contribution: 10%

@@ -3,9 +3,10 @@ Ranking System Service - app/services/ranking_service.py
 
 Business logic for employee ranking calculation.
 
-Implements 7-category ranking system:
+Implements 8-category ranking system:
 - Attendance & Functionality: 20%
-- Task Completion: 25%
+- Task Completion: 15%
+- KRA Completion: 10% (calculated from KRA tasks; the others are entered manually)
 - Task Quality & Cleanliness: 20%
 - Standby / Emergency Support: 10%
 - Overtime Contribution: 10%
@@ -49,9 +50,16 @@ DEFAULT_CRITERIA = [
     {
         "name": "task_completion",
         "criterion_name": "Task Completion",
-        "weightage": 25.0,
+        "weightage": 15.0,
         "max_points": 100.0,
         "description": "Timeliness and completion rate of assigned tasks"
+    },
+    {
+        "name": "kra_completion",
+        "criterion_name": "KRA Completion",
+        "weightage": 10.0,
+        "max_points": 100.0,
+        "description": "Share of assigned KRA tasks completed, with half credit when completed after a delay"
     },
     {
         "name": "task_quality",

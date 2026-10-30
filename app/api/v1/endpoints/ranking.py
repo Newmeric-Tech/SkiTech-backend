@@ -111,9 +111,10 @@ async def initialize_ranking_criteria(
     """
     Initialize default ranking criteria for a property.
     
-    Creates 7 default criteria with standard weightages:
+    Creates 8 default criteria with standard weightages:
     - Attendance & Functionality: 20%
-    - Task Completion: 25%
+    - Task Completion: 15%
+    - KRA Completion: 10%
     - Task Quality & Cleanliness: 20%
     - Standby / Emergency Support: 10%
     - Overtime Contribution: 10%
