@@ -162,7 +162,7 @@ async def test_stale_record_at_another_property_does_not_block_or_get_closed(db)
 # ── /attendance/status ─────────────────────────────────────────────────────
 
 async def _status(monkeypatch, hours_ago):
-    record = SimpleNamespace(id=uuid4(), punch_in_time=NOW - timedelta(hours=hours_ago), is_within_fence=True,
+    record = SimpleNamespace(id=uuid4(), punch_in_time=datetime.now(timezone.utc) - timedelta(hours=hours_ago), is_within_fence=True,
                              current_status=None, punch_in_lat=1.0, punch_in_lon=2.0)
 
     async def fake_active(**_):
