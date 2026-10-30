@@ -156,3 +156,41 @@ async def test_one_employees_database_error_leaves_the_others_ranked(monkeypatch
         assert list(rows) == [w.emp_with_tasks.id] and rows[w.emp_with_tasks.id].rank == 1
         assert len(await w.kra_scores()) == 1
         assert f"calculation failed for employee {w.emp_no_tasks.id}" in caplog.text
+
+
+async def test_reads_work_for_an_employee_with_a_department():
+    async with throwaway_database() as url, PgWorld(url) as w:
+        async with w.sessions() as session:
+            (await session.get(Employee, w.emp_with_tasks.id)).department_id = w.department.id
+            await session.commit()
+        await w.recalculate()
+
+        params = {"tenant_id": str(TENANT)}
+        listed = await w.client.get(f"/rankings/properties/{w.prop.id}/rankings", params=params)
+        assert listed.status_code == 200, listed.text
+        assert {i["department"] for i in listed.json()["items"]} == {"Front Desk", None}
+
+        detail = await w.client.get(f"/rankings/employees/{w.emp_with_tasks.id}/ranking", params=params)
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["department"] == "Front Desk"
+        kra = [s for s in detail.json()["scores_breakdown"] if s["criterion_name"] == KRA_CRITERION]
+        assert kra[0]["score"] == 100.0
+
+        portal = await w.client.get(f"/rankings/employees/{w.emp_with_tasks.id}/performance-portal", params=params)
+        assert portal.status_code == 200, portal.text
+        assert portal.json()["department"] == "Front Desk"
+
+        dashboard = await w.client.get(f"/rankings/properties/{w.prop.id}/dashboard", params=params)
+        assert dashboard.status_code == 200, dashboard.text
+
+
+async def test_reads_leave_out_kra_for_an_employee_it_does_not_apply_to():
+    async with throwaway_database() as url, PgWorld(url) as w:
+        await w.recalculate()
+        params = {"tenant_id": str(TENANT)}
+        detail = await w.client.get(f"/rankings/employees/{w.emp_no_tasks.id}/ranking", params=params)
+        assert detail.status_code == 200, detail.text
+        assert KRA_CRITERION not in [s["criterion_name"] for s in detail.json()["scores_breakdown"]]
+        portal = await w.client.get(f"/rankings/employees/{w.emp_no_tasks.id}/performance-portal", params=params)
+        assert portal.status_code == 200, portal.text
+        assert KRA_CRITERION not in portal.json()["score_breakdown"]

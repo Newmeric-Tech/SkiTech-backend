@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.kra_tasks import KraDefinition, KraOccurrence
 from app.models.ranking_models import EmployeeRanking, PerformanceStatus, RankingCriteriaConfig
-from app.models.models import Employee, User, Property
+from app.models.models import Department, Employee, User, Property
 from app.repositories.ranking_repository import (
     RankingCriteriaRepository, EmployeeScoresRepository,
     EmployeeRankingRepository, RankingAuditRepository, RankingInsightRepository
@@ -614,6 +614,15 @@ class RankingService:
     # RESPONSE BUILDING
     # ===========================================================
 
+    async def _department_name(self, employee: Optional[Employee]) -> Optional[str]:
+        """Read explicitly: employee.department is a lazy load, which fails on
+        the async driver for any employee who has a department."""
+        if not employee or not employee.department_id:
+            return None
+        return (await self.session.execute(
+            select(Department.name).where(Department.id == employee.department_id)
+        )).scalar_one_or_none()
+
     async def get_rankings_for_property(
         self,
         tenant_id: UUID,
@@ -640,7 +649,7 @@ class RankingService:
                 rank=ranking.rank,
                 employee_id=ranking.employee_id,
                 employee_name=f"{employee.first_name} {employee.last_name}" if employee else "Unknown",
-                department=employee.department.name if employee and employee.department else None,
+                department=await self._department_name(employee),
                 overall_score=ranking.overall_score,
                 performance_status=ranking.performance_status,
                 score_change=ranking.score_change,
@@ -700,7 +709,7 @@ class RankingService:
             id=ranking.id,
             employee_id=ranking.employee_id,
             employee_name=f"{employee.first_name} {employee.last_name}" if employee else "Unknown",
-            department=employee.department.name if employee and employee.department else None,
+            department=await self._department_name(employee),
             rank=ranking.rank,
             overall_score=ranking.overall_score,
             performance_status=ranking.performance_status,
@@ -779,7 +788,7 @@ class RankingService:
         return EmployeePerformancePortal(
             employee_id=employee_id,
             employee_name=f"{employee.first_name} {employee.last_name}",
-            department=employee.department.name if employee.department else "N/A",
+            department=await self._department_name(employee) or "N/A",
             position=employee.position or "N/A",
             current_rank=ranking.rank,
             current_overall_score=ranking.overall_score,
@@ -814,7 +823,7 @@ class RankingService:
                     rank=ranking.rank,
                     employee_id=ranking.employee_id,
                     employee_name=f"{emp.first_name} {emp.last_name}" if emp else "Unknown",
-                    department=emp.department.name if emp and emp.department else None,
+                    department=await self._department_name(emp),
                     overall_score=ranking.overall_score,
                     performance_status=ranking.performance_status,
                     score_change=ranking.score_change
