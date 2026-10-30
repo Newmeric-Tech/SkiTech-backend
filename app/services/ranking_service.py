@@ -22,7 +22,8 @@ import statistics
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.ranking_models import EmployeeRanking, PerformanceStatus
+from app.models.kra_tasks import KraDefinition, KraOccurrence
+from app.models.ranking_models import EmployeeRanking, PerformanceStatus, RankingCriteriaConfig
 from app.models.models import Employee, User, Property
 from app.repositories.ranking_repository import (
     RankingCriteriaRepository, EmployeeScoresRepository,
@@ -32,6 +33,7 @@ from app.schemas.ranking_schemas import (
     EmployeeRankingResponse, EmployeeRankingScoreBreakdown, RankingListItem,
     PerformanceMetric, EmployeePerformancePortal, EmployeeBadge
 )
+from app.services.kra_task_service import ensure_occurrences
 from app.utils.exceptions import NotFound, ValidationError
 
 
@@ -100,6 +102,51 @@ DEFAULT_CRITERIA = [
 
 
 # ===========================================================
+# KRA COMPLETION SCORE
+# ===========================================================
+
+KRA_CRITERION = "KRA Completion"
+# completed_at is UTC while periods are local dates, so a day's grace.
+KRA_LATE_ALLOWANCE = timedelta(days=1)
+
+
+def kra_credit(status: str, was_delayed: bool, completed_at: Optional[datetime], period_end) -> Tuple[float, str]:
+    """(credit, category) for one task period."""
+    if status != "completed":
+        return 0.0, "not_completed"
+    if was_delayed:
+        return 0.5, "completed_after_delay"
+    if completed_at is None or completed_at.date() > period_end + KRA_LATE_ALLOWANCE:
+        return 0.5, "late_without_mark"
+    return 1.0, "on_time"
+
+
+def score_kra_occurrences(occurrences) -> Optional[dict]:
+    """raw_points (0-100) and evidence counts, or None if nothing counts.
+
+    Takes rows with definition_id, assignee_id, period_start, period_end,
+    status, was_delayed, completed_at and frequency. A task ended and reassigned
+    in the same period has two rows: it counts once, with the better credit.
+    """
+    best: Dict[tuple, Tuple[float, str, str]] = {}
+    for row in occurrences:
+        key = (row.definition_id, row.assignee_id, row.period_start)
+        credit, category = kra_credit(row.status, row.was_delayed, row.completed_at, row.period_end)
+        if key not in best or credit > best[key][0]:
+            best[key] = (credit, category, row.frequency)
+    if not best:
+        return None
+
+    evidence = {"counted": len(best), "on_time": 0, "completed_after_delay": 0,
+                "late_without_mark": 0, "not_completed": 0, "by_frequency": {}}
+    for _, category, frequency in best.values():
+        evidence[category] += 1
+        evidence["by_frequency"][frequency] = evidence["by_frequency"].get(frequency, 0) + 1
+    raw_points = sum(credit for credit, _, _ in best.values()) / len(best) * 100
+    return {"raw_points": raw_points, "evidence": evidence}
+
+
+# ===========================================================
 # RANKING SERVICE
 # ===========================================================
 
@@ -162,6 +209,96 @@ class RankingService:
                 criteria_list.append(new_criteria)
         
         return criteria_list
+
+    # ===========================================================
+    # KRA COMPLETION
+    # ===========================================================
+
+    async def store_kra_score(
+        self,
+        tenant_id: UUID,
+        employee: Employee,
+        criterion: RankingCriteriaConfig,
+        period_start: datetime,
+        period_end: datetime
+    ) -> bool:
+        """Calculate and save the employee's KRA Completion score for the period,
+        replacing any earlier one. False when the criterion doesn't apply to them
+        (no linked user, or no task period counted), and then no row is left.
+        The caller commits.
+        """
+        result = None
+        if employee.user_id is not None:
+            result = await self._kra_result(tenant_id, employee, period_start.date(), period_end.date())
+
+        existing = await self.scores_repo.get_score_by_criterion_period(
+            tenant_id=tenant_id,
+            employee_id=employee.id,
+            criterion_name=KRA_CRITERION,
+            period_start=period_start,
+            period_end=period_end
+        )
+        if result is None:
+            if existing:
+                await self.session.delete(existing)
+                await self.session.flush()
+            return False
+
+        if existing:
+            await self.scores_repo.update_score(
+                tenant_id,
+                existing.id,
+                property_id=employee.property_id,
+                weightage=criterion.weightage,
+                max_points=criterion.max_points,
+                raw_points=result["raw_points"],
+                deductions=0.0,
+                final_points=result["raw_points"],
+                deduction_details=None,
+                notes=None,
+                evidence=result["evidence"],
+                calculated_at=datetime.utcnow(),
+                deleted_at=None
+            )
+        else:
+            await self.scores_repo.create_score(
+                tenant_id=tenant_id,
+                property_id=employee.property_id,
+                employee_id=employee.id,
+                criterion_name=KRA_CRITERION,
+                weightage=criterion.weightage,
+                raw_points=result["raw_points"],
+                max_points=criterion.max_points,
+                period_start=period_start,
+                period_end=period_end,
+                evidence=result["evidence"]
+            )
+        return True
+
+    async def _kra_result(self, tenant_id: UUID, employee: Employee, window_start, window_end) -> Optional[dict]:
+        # Tasks nobody opened must exist to count as missed.
+        today = datetime.utcnow().date()
+        await ensure_occurrences(
+            self.session, tenant_id, assignee_id=employee.user_id, property_id=employee.property_id,
+            up_to_date=min(window_end, today)
+        )
+        rows = (await self.session.execute(
+            select(
+                KraOccurrence.definition_id, KraOccurrence.assignee_id, KraOccurrence.period_start,
+                KraOccurrence.period_end, KraOccurrence.status, KraOccurrence.was_delayed,
+                KraOccurrence.completed_at, KraDefinition.frequency
+            )
+            .join(KraDefinition, KraDefinition.id == KraOccurrence.definition_id)
+            .where(
+                KraOccurrence.tenant_id == tenant_id,
+                KraOccurrence.assignee_id == employee.user_id,
+                KraOccurrence.property_id == employee.property_id,
+                KraOccurrence.period_end >= window_start,
+                KraOccurrence.period_end <= window_end,
+                KraOccurrence.period_end < today  # a period ending today is still running
+            )
+        )).all()
+        return score_kra_occurrences(rows)
 
     # ===========================================================
     # CALCULATION ENGINE
