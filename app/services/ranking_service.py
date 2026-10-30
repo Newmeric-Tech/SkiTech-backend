@@ -14,7 +14,7 @@ Implements 8-category ranking system:
 - Customer Feedback / Complaints: 5%
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
@@ -112,6 +112,12 @@ DEFAULT_CRITERIA = [
 KRA_CRITERION = "KRA Completion"
 # completed_at is UTC while periods are local dates, so a day's grace.
 KRA_LATE_ALLOWANCE = timedelta(days=1)
+
+
+def _naive_utc(value: datetime) -> datetime:
+    """The period columns have no time zone, and asyncpg rejects aware values.
+    The frontend sends toISOString() dates, with a Z."""
+    return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
 
 
 def kra_credit(status: str, was_delayed: bool, completed_at: Optional[datetime], period_end) -> Tuple[float, str]:
@@ -318,6 +324,7 @@ class RankingService:
         ranking_type: str = "weekly"
     ) -> Optional[EmployeeRanking]:
         """Calculate ranking for single employee"""
+        period_start, period_end = _naive_utc(period_start), _naive_utc(period_end)
         
         # Get employee
         employee = await self.session.get(Employee, employee_id)
@@ -472,6 +479,7 @@ class RankingService:
         ranking_type: str = "weekly"
     ) -> Dict:
         """Recalculate all rankings for property in period"""
+        period_start, period_end = _naive_utc(period_start), _naive_utc(period_end)
         
         # Get all active employees
         result = await self.session.execute(
