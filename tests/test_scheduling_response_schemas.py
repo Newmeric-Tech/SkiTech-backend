@@ -5,7 +5,7 @@ in-memory SQLite (real tables behind the async-shaped wrapper). Never touches
 the .env database.
 """
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -338,3 +338,15 @@ async def test_manager_dashboard_lists_conflict_as_critical_action(pg_client):
     res = await pg_client.client.get("/scheduling/dashboard/manager", params=WEEK)
     assert res.status_code == 200
     assert res.json()["critical_actions"][0]["employee_name"] == "A B"
+
+
+async def test_recommendations_include_department_of_candidate(pg_client):
+    async with pg_client.sessions() as session:
+        session.add(Department(id=DEPARTMENT, tenant_id=TENANT, property_id=PROPERTY, name="Front Desk"))
+        (await session.get(Employee, OTHER_EMP)).department_id = DEPARTMENT
+        await session.commit()
+    res = await pg_client.client.post(
+        "/scheduling/recommendations", params={"original_employee_id": str(EMP)},
+        json={"shift_date": DAY, "shift_start_time": "09:00", "shift_end_time": "17:00"})
+    assert res.status_code == 200
+    assert res.json()["recommendations"][0]["department"] == "Front Desk"

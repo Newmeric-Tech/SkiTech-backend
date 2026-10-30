@@ -369,7 +369,7 @@ class SchedulingService:
         ]
         if self.property_id is not None:
             conditions.append(Employee.property_id == self.property_id)
-        stmt = select(Employee).where(and_(*conditions))
+        stmt = select(Employee).where(and_(*conditions)).options(selectinload(Employee.department))
         
         if department_id:
             stmt = stmt.where(Employee.department_id == department_id)
