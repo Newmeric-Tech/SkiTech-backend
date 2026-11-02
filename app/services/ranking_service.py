@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 import statistics
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.kra_tasks import KraDefinition, KraOccurrence
@@ -118,6 +118,25 @@ def _naive_utc(value: datetime) -> datetime:
     """The period columns have no time zone, and asyncpg rejects aware values.
     The frontend sends toISOString() dates, with a Z."""
     return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+
+
+def employee_counts_for_property(property_id: UUID):
+    """SQL condition on Employee: the employee counts for property P only if
+    their employee record is at P and, when it is linked to a login
+    (employees.user_id), that user is active, not deleted, and also at P.
+    Employees without a login: their record's property decides, as before.
+
+    A login at another property (e.g. that property's manager with a stray
+    employee record here) or a deactivated/deleted account doesn't count:
+    such accounts can't sign in, and KRA tasks already skip them.
+    """
+    linked_user_here = select(User.id).where(
+        User.id == Employee.user_id,
+        User.property_id == property_id,
+        User.is_active == True,
+        User.deleted_at.is_(None),
+    ).exists()
+    return and_(Employee.property_id == property_id, or_(Employee.user_id.is_(None), linked_user_here))
 
 
 def kra_credit(status: str, was_delayed: bool, completed_at: Optional[datetime], period_end) -> Tuple[float, str]:
@@ -481,12 +500,12 @@ class RankingService:
         """Recalculate all rankings for property in period"""
         period_start, period_end = _naive_utc(period_start), _naive_utc(period_end)
         
-        # Get all active employees
+        # Get all active employees who count for this property
         result = await self.session.execute(
             select(Employee).where(
                 and_(
                     Employee.tenant_id == tenant_id,
-                    Employee.property_id == property_id,
+                    employee_counts_for_property(property_id),
                     Employee.is_active == True
                 )
             )
@@ -641,9 +660,10 @@ class RankingService:
             property_id=property_id,
             ranking_type=ranking_type,
             skip=skip,
-            limit=limit
+            limit=limit,
+            employee_filter=employee_counts_for_property(property_id)  # stored rows of others stay hidden
         )
-        
+
         items = []
         for ranking in rankings:
             employee = await self.session.get(Employee, ranking.employee_id)
@@ -817,7 +837,9 @@ class RankingService:
         await self.require_property(tenant_id, property_id)
         
         # Get top performers
-        top_5 = await self.ranking_repo.get_top_performers(tenant_id, property_id, limit=5)
+        counts_here = employee_counts_for_property(property_id)
+        top_5 = await self.ranking_repo.get_top_performers(tenant_id, property_id, limit=5,
+                                                           employee_filter=counts_here)
         top_5_items = []
         for ranking in top_5:
             emp = await self.session.get(Employee, ranking.employee_id)
@@ -834,7 +856,8 @@ class RankingService:
             )
         
         # Get stats
-        stats = await self.ranking_repo.get_ranking_statistics(tenant_id, property_id)
+        stats = await self.ranking_repo.get_ranking_statistics(tenant_id, property_id,
+                                                               employee_filter=counts_here)
         
         # Count by performance status
         promotion_ready = 0
@@ -843,9 +866,12 @@ class RankingService:
         needs_improvement = 0
         
         result = await self.session.execute(
-            select(EmployeeRanking.performance_status, func.count()).where(
+            select(EmployeeRanking.performance_status, func.count())
+            .join(Employee, Employee.id == EmployeeRanking.employee_id)
+            .where(
                 EmployeeRanking.tenant_id == tenant_id,
-                EmployeeRanking.property_id == property_id
+                EmployeeRanking.property_id == property_id,
+                counts_here
             ).group_by(EmployeeRanking.performance_status)
         )
         

@@ -18,7 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints import ranking
-from app.models.models import Employee, Property
+from app.models.models import Employee, Property, User
 from app.models.ranking_models import (
     EmployeeRanking, EmployeeRankingScore, RankingAuditLog, RankingCriteriaConfig, RankingInsight,
 )
@@ -36,7 +36,7 @@ def caller(role, property_id=None, tenant_id=TENANT, user_id=None):
 @pytest.fixture
 def w():
     engine = create_engine("sqlite://")
-    for model in (Property, Employee, RankingCriteriaConfig, EmployeeRankingScore,
+    for model in (Property, User, Employee, RankingCriteriaConfig, EmployeeRankingScore,
                   EmployeeRanking, RankingInsight, RankingAuditLog):
         model.__table__.create(engine)
     s = Session(engine)
@@ -58,6 +58,8 @@ def w():
                               rank=1, total_active_employees=1, scores_breakdown={"Task Completion": 80.0},
                               performance_status="consistent"))
         setattr(world, tag, SimpleNamespace(prop=prop.id, emp=emp.id))
+    s.add(User(id=staff_user, tenant_id=TENANT, property_id=world.a.prop, email="staff@example.com",
+               password_hash="x", role_id=uuid4(), is_active=True, is_verified=True))
     s.commit()
     yield world
     s.close()

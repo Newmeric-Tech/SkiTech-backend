@@ -22,6 +22,14 @@ from app.models.ranking_models import (
 from app.models.models import Employee
 
 
+def _for_employees(query, employee_filter):
+    """Restrict an EmployeeRanking query to employees matching employee_filter
+    (a condition on Employee), when one is given."""
+    if employee_filter is None:
+        return query
+    return query.join(Employee, Employee.id == EmployeeRanking.employee_id).where(employee_filter)
+
+
 # ===========================================================
 # RANKING CRITERIA REPOSITORY
 # ===========================================================
@@ -278,17 +286,19 @@ class EmployeeRankingRepository:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
         skip: int = 0,
-        limit: int = 50
+        limit: int = 50,
+        employee_filter=None
     ) -> Tuple[List[EmployeeRanking], int]:
-        """Get rankings for property, most recent"""
-        query = select(EmployeeRanking).where(
+        """Get rankings for property, most recent. employee_filter, a condition
+        on Employee, leaves out rows of employees it doesn't match."""
+        query = _for_employees(select(EmployeeRanking).where(
             and_(
                 EmployeeRanking.tenant_id == tenant_id,
                 EmployeeRanking.property_id == property_id,
                 EmployeeRanking.ranking_type == ranking_type
             )
-        )
-        
+        ), employee_filter)
+
         if period_start and period_end:
             query = query.where(
                 and_(
@@ -381,12 +391,16 @@ class EmployeeRankingRepository:
         self,
         tenant_id: UUID,
         property_id: UUID,
-        limit: int = 5
+        limit: int = 5,
+        employee_filter=None
     ) -> List[EmployeeRanking]:
         """Get top performers"""
         result = await self.session.execute(
-            select(EmployeeRanking)
-            .where(EmployeeRanking.tenant_id == tenant_id, EmployeeRanking.property_id == property_id)
+            _for_employees(
+                select(EmployeeRanking)
+                .where(EmployeeRanking.tenant_id == tenant_id, EmployeeRanking.property_id == property_id),
+                employee_filter
+            )
             .order_by(EmployeeRanking.rank)
             .limit(limit)
         )
@@ -413,21 +427,25 @@ class EmployeeRankingRepository:
         self,
         tenant_id: UUID,
         property_id: UUID,
-        ranking_type: str = "weekly"
+        ranking_type: str = "weekly",
+        employee_filter=None
     ) -> dict:
         """Get ranking statistics for property"""
         result = await self.session.execute(
-            select(
-                func.count().label("total_employees"),
-                func.avg(EmployeeRanking.overall_score).label("avg_score"),
-                func.max(EmployeeRanking.overall_score).label("max_score"),
-                func.min(EmployeeRanking.overall_score).label("min_score")
-            ).where(
-                and_(
-                    EmployeeRanking.tenant_id == tenant_id,
-                    EmployeeRanking.property_id == property_id,
-                    EmployeeRanking.ranking_type == ranking_type
-                )
+            _for_employees(
+                select(
+                    func.count().label("total_employees"),
+                    func.avg(EmployeeRanking.overall_score).label("avg_score"),
+                    func.max(EmployeeRanking.overall_score).label("max_score"),
+                    func.min(EmployeeRanking.overall_score).label("min_score")
+                ).select_from(EmployeeRanking).where(
+                    and_(
+                        EmployeeRanking.tenant_id == tenant_id,
+                        EmployeeRanking.property_id == property_id,
+                        EmployeeRanking.ranking_type == ranking_type
+                    )
+                ),
+                employee_filter
             )
         )
         row = result.one()

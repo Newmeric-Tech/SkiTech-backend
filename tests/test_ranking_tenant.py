@@ -20,7 +20,7 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints import ranking
-from app.models.models import Employee, Property
+from app.models.models import Employee, Property, User
 from app.models.ranking_models import (
     EmployeeRanking, EmployeeRankingScore, RankingAuditLog, RankingCriteriaConfig, RankingInsight,
 )
@@ -67,7 +67,7 @@ class AsyncSQLite:
 @pytest.fixture
 def env():
     engine = create_engine("sqlite://")
-    for model in (Property, Employee, RankingCriteriaConfig, EmployeeRankingScore,
+    for model in (Property, User, Employee, RankingCriteriaConfig, EmployeeRankingScore,
                   EmployeeRanking, RankingInsight, RankingAuditLog):
         model.__table__.create(engine)
     s = Session(engine)
