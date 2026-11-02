@@ -39,9 +39,12 @@ class PgWorld:
             "server_settings": {"session_replication_role": "replica"}})
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False, autoflush=False)
 
-    async def __aenter__(self):
+    async def create_schema(self):
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+
+    async def __aenter__(self):
+        await self.create_schema()
         roles = role_rows()
         self.prop = property_row(TENANT)
         self.department = Department(id=uuid4(), tenant_id=TENANT, property_id=self.prop.id, name="Front Desk")

@@ -49,6 +49,18 @@ class PerformanceStatus(str, Enum):
     MOST_IMPROVED = "most_improved"
 
 
+def _varchar_enum(enum_class):
+    """A plain VARCHAR(50) storing the enum's values (not its member names), with no
+    Postgres enum type and no CHECK constraint, as migration 006 created the columns."""
+    return SQLEnum(
+        enum_class,
+        native_enum=False,
+        create_constraint=False,
+        length=50,
+        values_callable=lambda e: [m.value for m in e],
+    )
+
+
 # ===========================================================
 # RANKING CRITERIA CONFIGURATION
 # ===========================================================
@@ -188,9 +200,11 @@ class EmployeeRanking(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     rank: int = Column(Integer, nullable=False)  # 1, 2, 3, ...
     total_active_employees: int = Column(Integer, nullable=False)  # For context
     
-    # Performance status
+    # Performance status. Migration 006 made this and status VARCHAR(50) holding the
+    # lowercase values ('consistent', 'active'); there is no Postgres enum type, so
+    # a native enum here fails every INSERT with "type ... does not exist" (42704).
     performance_status: str = Column(
-        SQLEnum(PerformanceStatus),
+        _varchar_enum(PerformanceStatus),
         nullable=False,
         default=PerformanceStatus.CONSISTENT
     )
@@ -204,7 +218,7 @@ class EmployeeRanking(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     
     # Status
     status: str = Column(
-        SQLEnum(RankingStatus),
+        _varchar_enum(RankingStatus),
         nullable=False,
         default=RankingStatus.ACTIVE
     )
