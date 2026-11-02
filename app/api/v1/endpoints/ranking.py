@@ -6,7 +6,7 @@ REST API endpoints for Employee Ranking System.
 
 import logging
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -25,6 +25,7 @@ from app.schemas.ranking_schemas import (
     DashboardStats, RecalculateRankingRequest, RecalculationResult,
     RankingType
 )
+from app.services.geofence_scope import PropertyNotInScope, property_in_scope
 from app.services.ranking_service import RankingService
 from app.utils.exceptions import NotFound, SkiTechException, ValidationError
 from app.utils.safe_errors import log_safe_exception
@@ -41,6 +42,67 @@ def _check_tenant_param(current_user: User, tenant_id: UUID) -> None:
     answered like a missing resource (404)."""
     if current_user.tenant_id != tenant_id:
         raise NotFound("Tenant")
+
+
+# ===========================================================
+# PROPERTY SCOPE
+# ===========================================================
+# Tenant Admin / Super Admin: any property of their tenant. Co Admin with a
+# property, and Manager: that property only (users.property_id, read fresh by
+# get_current_user_obj); a Manager without one gets 403. Staff: their own
+# employee record, plus the ranking list of their own property (the staff
+# ranking page shows it as a leaderboard); 403 elsewhere. A property or
+# employee outside scope is answered like a missing one (404).
+
+SCOPED_ROLES = ("Super Admin", "Tenant Admin", "Co Admin", "Manager", "Staff")
+NO_ACCESS = "You don't have access to these rankings."
+
+
+def _role(current_user: User) -> Optional[str]:
+    role = getattr(current_user, "role_obj", None)
+    return role.name if role else None
+
+
+def _check_role(current_user: User, staff_allowed: bool = False) -> str:
+    """403 before any lookup, so it never depends on what exists."""
+    role = _role(current_user)
+    if role not in SCOPED_ROLES or (role == "Staff" and not staff_allowed):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_ACCESS)
+    if role == "Manager" and current_user.property_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_ACCESS)
+    return role
+
+
+async def _in_scope(session: AsyncSession, current_user: User, role: str, property_id) -> bool:
+    scope = {"role": role, "tenant_id": current_user.tenant_id, "property_id": current_user.property_id}
+    try:
+        await property_in_scope(session, property_id, scope)
+        return True
+    except PropertyNotInScope:
+        return False
+
+
+async def _require_property(session: AsyncSession, current_user: User, property_id: UUID,
+                            staff_allowed: bool = False) -> None:
+    role = _check_role(current_user, staff_allowed)
+    if not await _in_scope(session, current_user, role, property_id):
+        raise NotFound(f"Property {property_id}")
+
+
+async def _require_employee(session: AsyncSession, current_user: User, employee_id: UUID,
+                            staff_own: bool = False) -> Employee:
+    """The employee, scoped on the property of their employee record. Staff may
+    only reach their own record, and only on routes that allow it."""
+    role = _check_role(current_user, staff_allowed=staff_own)
+    employee = await session.get(Employee, employee_id)
+    if role == "Staff":
+        if not employee or employee.tenant_id != current_user.tenant_id or employee.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NO_ACCESS)
+        return employee
+    if (not employee or employee.tenant_id != current_user.tenant_id
+            or not await _in_scope(session, current_user, role, employee.property_id)):
+        raise NotFound(f"Employee {employee_id}")
+    return employee
 
 
 # ===========================================================
@@ -83,6 +145,8 @@ async def get_my_ranking(
             raise NotFound("No ranking found for the current period")
 
         return ranking
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except SkiTechException as e:
@@ -124,7 +188,8 @@ async def initialize_ranking_criteria(
     try:
         # Verify tenant access
         _check_tenant_param(current_user, tenant_id)
-        
+        await _require_property(session, current_user, property_id)
+
         service = RankingService(session)
         criteria_list = await service.initialize_criteria(current_user.tenant_id, property_id)
         
@@ -133,6 +198,8 @@ async def initialize_ranking_criteria(
             "message": f"Initialized {len(criteria_list)} criteria",
             "criteria_count": len(criteria_list)
         }
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
@@ -163,7 +230,8 @@ async def create_ranking_criterion(
     """Create new ranking criterion"""
     try:
         _check_tenant_param(current_user, tenant_id)
-        
+        await _require_property(session, current_user, property_id)
+
         await RankingService(session).require_property(current_user.tenant_id, property_id)
         repo = RankingCriteriaRepository(session)
         criteria = await repo.create_criteria(
@@ -179,6 +247,8 @@ async def create_ranking_criterion(
         
         await session.commit()
         return criteria
+    except HTTPException:
+        raise
     except NotFound as e:
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
@@ -206,11 +276,14 @@ async def list_ranking_criteria(
     """Get all ranking criteria for property"""
     try:
         _check_tenant_param(current_user, tenant_id)
-        
+        await _require_property(session, current_user, property_id)
+
         repo = RankingCriteriaRepository(session)
         criteria_list = await repo.get_criteria_by_property(current_user.tenant_id, property_id)
         
         return criteria_list
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
@@ -247,7 +320,9 @@ async def record_employee_score(
     try:
         _check_tenant_param(current_user, tenant_id)
         
-        # Employee and property must belong to the caller's tenant
+        # Employee and property must both be in the caller's scope (Staff: 403)
+        await _require_employee(session, current_user, employee_id)
+        await _require_property(session, current_user, property_id)
         service = RankingService(session)
         await service.require_employee(current_user.tenant_id, employee_id)
         await service.require_property(current_user.tenant_id, property_id)
@@ -281,6 +356,8 @@ async def record_employee_score(
         
         await session.commit()
         return score
+    except HTTPException:
+        raise
     except NotFound as e:
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
@@ -311,7 +388,8 @@ async def get_employee_scores(
     """Get all scores for an employee"""
     try:
         _check_tenant_param(current_user, tenant_id)
-        
+        await _require_employee(session, current_user, employee_id, staff_own=True)
+
         repo = EmployeeScoresRepository(session)
         scores = await repo.get_employee_scores(
             tenant_id=current_user.tenant_id,
@@ -321,6 +399,8 @@ async def get_employee_scores(
         )
         
         return scores
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
@@ -360,7 +440,9 @@ async def get_property_rankings(
     """
     try:
         _check_tenant_param(current_user, tenant_id)
-        
+        # Staff read their own property's list: the staff ranking page's leaderboard
+        await _require_property(session, current_user, property_id, staff_allowed=True)
+
         service = RankingService(session)
         items, total = await service.get_rankings_for_property(
             tenant_id=current_user.tenant_id,
@@ -380,6 +462,8 @@ async def get_property_rankings(
             period_end=datetime.now(),
             property_name="Property"  # TODO: Get property name
         )
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     except SkiTechException as e:
@@ -405,7 +489,8 @@ async def get_employee_ranking(
     """Get detailed ranking for specific employee"""
     try:
         _check_tenant_param(current_user, tenant_id)
-        
+        await _require_employee(session, current_user, employee_id, staff_own=True)
+
         service = RankingService(session)
         ranking = await service.get_employee_ranking_detail(
             tenant_id=current_user.tenant_id,
@@ -417,6 +502,8 @@ async def get_employee_ranking(
             raise NotFound("No ranking found for employee")
         
         return ranking
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -453,9 +540,10 @@ async def get_performance_portal(
     - Today's tasks
     """
     try:
-        # Allow employees to view their own portal or allow managers
+        # Employees view their own portal; managers and admins those in their scope
         _check_tenant_param(current_user, tenant_id)
-        
+        await _require_employee(session, current_user, employee_id, staff_own=True)
+
         service = RankingService(session)
         portal = await service.get_performance_portal(current_user.tenant_id, employee_id)
         
@@ -463,6 +551,8 @@ async def get_performance_portal(
             raise NotFound("Performance data not available")
         
         return portal.dict()
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -503,11 +593,14 @@ async def get_dashboard_stats(
     """
     try:
         _check_tenant_param(current_user, tenant_id)
-        
+        await _require_property(session, current_user, property_id)
+
         service = RankingService(session)
         stats = await service.get_dashboard_stats(current_user.tenant_id, property_id)
         
         return stats
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -544,7 +637,8 @@ async def recalculate_rankings(
     """
     try:
         _check_tenant_param(current_user, tenant_id)
-        
+        await _require_property(session, current_user, property_id)
+
         service = RankingService(session)
         result = await service.recalculate_property_rankings(
             tenant_id=current_user.tenant_id,

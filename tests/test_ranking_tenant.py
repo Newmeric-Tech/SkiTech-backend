@@ -96,7 +96,7 @@ def env():
     engine.dispose()
 
 
-USER = SimpleNamespace(id=uuid4(), tenant_id=MINE)
+USER = SimpleNamespace(id=uuid4(), tenant_id=MINE, property_id=None, role_obj=SimpleNamespace(name="Tenant Admin"))
 
 
 def _count(s, model, **where):
@@ -108,34 +108,39 @@ def _count(s, model, **where):
 
 # ── reads ────────────────────────────────────────────────────────────────────
 
-async def test_property_rankings_of_other_tenant_are_empty_own_are_listed(env):
+async def test_property_rankings_of_other_tenant_are_404_own_are_listed(env):
     db, _, ids = env
-    other = await ranking.get_property_rankings(property_id=ids["other"].property, tenant_id=MINE,
-                                                ranking_type="weekly", skip=0, limit=50,
-                                                current_user=USER, session=db)
+    with pytest.raises(HTTPException) as info:
+        await ranking.get_property_rankings(property_id=ids["other"].property, tenant_id=MINE,
+                                            ranking_type="weekly", skip=0, limit=50,
+                                            current_user=USER, session=db)
+    assert info.value.status_code == 404
     mine = await ranking.get_property_rankings(property_id=ids["mine"].property, tenant_id=MINE,
                                                ranking_type="weekly", skip=0, limit=50,
                                                current_user=USER, session=db)
-    assert (other.total, other.items) == (0, [])
     assert mine.total == 1 and mine.items[0].employee_id == ids["mine"].employee
 
 
-async def test_criteria_of_other_tenant_are_empty_own_are_listed(env):
+async def test_criteria_of_other_tenant_are_404_own_are_listed(env):
     db, _, ids = env
-    other = await ranking.list_ranking_criteria(tenant_id=MINE, property_id=ids["other"].property,
-                                                current_user=USER, session=db)
+    with pytest.raises(HTTPException) as info:
+        await ranking.list_ranking_criteria(tenant_id=MINE, property_id=ids["other"].property,
+                                            current_user=USER, session=db)
+    assert info.value.status_code == 404
     mine = await ranking.list_ranking_criteria(tenant_id=MINE, property_id=ids["mine"].property,
                                                current_user=USER, session=db)
-    assert other == [] and [c.criterion_name for c in mine] == ["Task Completion"]
+    assert [c.criterion_name for c in mine] == ["Task Completion"]
 
 
-async def test_scores_of_other_tenant_are_empty_own_are_listed(env):
+async def test_scores_of_other_tenant_are_404_own_are_listed(env):
     db, _, ids = env
     kwargs = dict(tenant_id=MINE, property_id=ids["mine"].property, period_start=None, period_end=None,
                   current_user=USER, session=db)
-    other = await ranking.get_employee_scores(employee_id=ids["other"].employee, **kwargs)
+    with pytest.raises(HTTPException) as info:
+        await ranking.get_employee_scores(employee_id=ids["other"].employee, **kwargs)
+    assert info.value.status_code == 404
     mine = await ranking.get_employee_scores(employee_id=ids["mine"].employee, **kwargs)
-    assert other == [] and len(mine) == 1
+    assert len(mine) == 1
 
 
 async def test_employee_ranking_of_other_tenant_is_404_own_works(env):

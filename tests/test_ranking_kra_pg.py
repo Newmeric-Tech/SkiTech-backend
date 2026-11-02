@@ -74,7 +74,8 @@ class PgWorld:
                 yield session
         fastapi_app.dependency_overrides[ranking_routes.get_async_session] = real_session
         fastapi_app.dependency_overrides[ranking_routes.get_current_user] = (
-            lambda: SimpleNamespace(id=self.user.id, tenant_id=TENANT))
+            lambda: SimpleNamespace(id=self.user.id, tenant_id=TENANT, property_id=None,
+                                    role_obj=SimpleNamespace(name="Tenant Admin")))
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=fastapi_app), base_url="http://t")
         return self
 

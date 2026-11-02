@@ -20,6 +20,15 @@ GENERIC = "Could not complete the ranking request."
 TENANT = uuid4()
 
 
+@pytest.fixture(autouse=True)
+def _property_in_scope(monkeypatch):
+    """Property scope is covered by test_ranking_property_scope.py; here the
+    fake session has no database, so the scope check is let through."""
+    async def allow(*args, **kwargs):
+        return None
+    monkeypatch.setattr(ranking, "_require_property", allow)
+
+
 class Session:
     def __init__(self):
         self.rollbacks = 0
