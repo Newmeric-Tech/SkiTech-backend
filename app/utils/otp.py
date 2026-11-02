@@ -5,6 +5,7 @@ OTPs are generated here and persisted in the users table (otp_code, otp_expires_
 These functions only handle email delivery; callers save/verify OTPs via the DB.
 """
 
+import hashlib
 import logging
 import random
 
@@ -18,28 +19,55 @@ def generate_otp() -> str:
     return str(random.randint(100000, 999999))
 
 
+def _key_diagnostics(raw: str, key: str, from_email: str, err: Exception) -> str:
+    """Non-secret facts about the configured key, to compare with a key tested elsewhere.
+
+    Only lengths, booleans, an 8-hex-char SHA-256 prefix of the cleaned key and the
+    sender domain: never the key or any part of it, the recipient or the error body.
+    """
+    edges = [c for c in (raw[:1], raw[-1:]) if c]
+    edge_whitespace = any(c.isspace() for c in edges)
+    edge_quote = any(c in "\"'" for c in edges)
+    edge_newline = any(c in "\r\n" for c in edges)
+    sha_prefix = hashlib.sha256(key.encode()).hexdigest()[:8]
+    sender_domain = from_email.rpartition("@")[2] if "@" in from_email else "(none)"
+    return (
+        "[SendGrid] key diagnostics:"
+        f" status={getattr(err, 'status_code', None)}"
+        f" raw_len={len(raw)} clean_len={len(key)}"
+        f" starts_with_SG={raw.startswith('SG.')}"
+        f" edge_whitespace={edge_whitespace} edge_quote={edge_quote} edge_newline={edge_newline}"
+        f" sha256_prefix={sha_prefix} sender_domain={sender_domain}"
+    )
+
+
 def _send_email(to: str, subject: str, html: str) -> bool:
-    if not settings.SENDGRID_API_KEY:
+    raw_key = settings.SENDGRID_API_KEY
+    if not raw_key:
         logger.warning("[Email] No SENDGRID_API_KEY set — skipping email")
         return False
 
+    # Pasted values sometimes carry whitespace or surrounding quotes
+    key = raw_key.strip().strip('"').strip("'")
+    from_email = settings.SMTP_EMAIL or "skitech.noreply@gmail.com"
     try:
         from sendgrid import SendGridAPIClient
         from sendgrid.helpers.mail import Mail
 
         message = Mail(
-            from_email=(settings.SMTP_EMAIL or "skitech.noreply@gmail.com", "SkiTech"),
+            from_email=(from_email, "SkiTech"),
             to_emails=to,
             subject=subject,
             html_content=html,
         )
-        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
+        sg = SendGridAPIClient(key)
         response = sg.send(message)
         logger.info(f"[SendGrid] ✅ Email sent — status: {response.status_code}")
         return True
     except Exception as e:
         # str(e) and exc_info can carry the recipient and SendGrid's response body.
         log_safe_exception(logger, "[SendGrid] ❌ Failed to send email", e)
+        logger.error(_key_diagnostics(raw_key, key, from_email, e))
         return False
 
 
