@@ -13,6 +13,7 @@ POST   /users/invite           → naya user invite karo (Admin only)
 
 import secrets
 import string
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,6 +24,7 @@ from app.api.dependencies import get_current_user, require_permission, require_r
 from app.core.database import get_db
 from app.core.security import hash_password, pwd_context, verify_password
 from app.models.models import Role, User
+from app.services.geofence_scope import assigned_property
 from app.schemas.schemas import (
     ChangePasswordRequest, UserInviteRequest, UserPropertyAssign,
     UserResponse, UserRoleUpdate, UserUpdate,
@@ -64,6 +66,19 @@ def _generate_temp_password(length: int = 12) -> str:
             and any(c.isdigit() for c in pwd)
         ):
             return pwd
+
+
+def _manager_property(current_user: dict) -> Optional[UUID]:
+    """For a Manager, the one property they may see users of (the JWT's
+    property_id, i.e. users.property_id at login); 403 without one. None for
+    every other role, whose scope is unchanged."""
+    if current_user.get("role") != "Manager":
+        return None
+    prop = assigned_property(current_user)
+    if prop is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Your account has no property assigned.")
+    return prop
 
 
 async def _get_user_or_404(
@@ -169,6 +184,14 @@ async def list_users(
     if current_user.get("role") == "Co Admin" and current_user.get("property_id"):
         property_id = UUID(current_user["property_id"])
 
+    # A Manager only ever sees their own property's users. Another property is
+    # answered like an unknown one: an empty list, never its users.
+    manager_property = _manager_property(current_user)
+    if manager_property is not None:
+        if property_id is not None and property_id != manager_property:
+            return []
+        property_id = manager_property
+
     q = (
         select(User)
         .join(Role, User.role_id == Role.id)
@@ -199,7 +222,11 @@ async def get_user(
     current_user: dict = Depends(require_roles(["Super Admin", "Tenant Admin", "Manager"])),
 ):
     """Get a specific user's details."""
-    return await _get_user_or_404(db, user_id, UUID(current_user["tenant_id"]))
+    manager_property = _manager_property(current_user)
+    user = await _get_user_or_404(db, user_id, UUID(current_user["tenant_id"]))
+    if manager_property is not None and user.property_id != manager_property:
+        raise HTTPException(status_code=404, detail="User not found")  # same as a missing one
+    return user
 
 
 # Roles a non-Super-Admin may assign, and only to users who already hold one.
