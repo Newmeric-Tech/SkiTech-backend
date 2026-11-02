@@ -258,8 +258,11 @@ async def test_recalculate_refuses_other_tenants_property_own_works(env, monkeyp
     assert info.value.status_code == 404
     assert _count(s, EmployeeRanking, property_id=ids["other"].property) == 1
     assert picked == []
-    await ranking.recalculate_rankings(property_id=ids["mine"].property, tenant_id=MINE,
-                                       request=request, current_user=USER, session=db)
+    # Every picked employee fails here, which the route now reports as a 500
+    with pytest.raises(HTTPException) as info:
+        await ranking.recalculate_rankings(property_id=ids["mine"].property, tenant_id=MINE,
+                                           request=request, current_user=USER, session=db)
+    assert info.value.status_code == 500
     assert picked == [(MINE, ids["mine"].employee)]
 
 

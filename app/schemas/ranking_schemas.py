@@ -302,6 +302,7 @@ class RecalculationResult(BaseModel):
     employees_processed: int
     new_rankings_created: int
     existing_rankings_updated: int
+    failed: int = 0  # employees whose calculation failed (details are in the server log)
     errors: Optional[List[str]] = None
 
 

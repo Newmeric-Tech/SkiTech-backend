@@ -455,8 +455,8 @@ async def test_recalculation_logs_a_failure_and_continues(w, monkeypatch, caplog
 
     result = await w.service.recalculate_property_rankings(TENANT, w.prop.id, START, END, "weekly")
 
-    assert set(result) == {"success", "total_calculated", "period"}
-    assert result["success"] is True and result["total_calculated"] == 1
+    assert set(result) == {"success", "total_calculated", "failed", "period"}
+    assert result["success"] is True and result["total_calculated"] == 1 and result["failed"] == 1
     assert f"[RANKING] calculation failed for employee {w.employee.id}" in caplog.text
     assert secret not in caplog.text
     rows = w.db.session.execute(select(EmployeeRanking)).scalars().all()

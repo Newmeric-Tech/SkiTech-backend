@@ -499,6 +499,7 @@ class RankingService:
         # Calculate for each employee. The savepoint keeps one employee's database
         # error from aborting the transaction the others share.
         rankings = []
+        failed = 0
         for employee_id in employee_ids:
             try:
                 async with self.session.begin_nested():
@@ -513,6 +514,7 @@ class RankingService:
                 rankings.append(ranking)
             except Exception as e:
                 # Continue with next employee
+                failed += 1
                 log_safe_exception(logger, f"[RANKING] calculation failed for employee {employee_id}", e)
         
         # Sort by overall_score descending and assign ranks
@@ -533,6 +535,7 @@ class RankingService:
         return {
             "success": True,
             "total_calculated": len(rankings),
+            "failed": failed,
             "period": f"{period_start.date()} to {period_end.date()}"
         }
 

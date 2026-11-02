@@ -554,13 +554,26 @@ async def recalculate_rankings(
             ranking_type=request.ranking_type
         )
         
+        if result["total_calculated"] == 0 and result["failed"] > 0:
+            # Every active employee failed: nothing was saved, so this is not a success
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not calculate rankings. Please try again or contact support.",
+            )
+
+        message = f"Calculated rankings for {result['total_calculated']} employees"
+        if result["failed"]:
+            message += f"; {result['failed']} could not be calculated"
         return RecalculationResult(
             success=result["success"],
-            message=f"Calculated rankings for {result['total_calculated']} employees",
+            message=message,
             employees_processed=result["total_calculated"],
             new_rankings_created=result["total_calculated"],
-            existing_rankings_updated=0
+            existing_rankings_updated=0,
+            failed=result["failed"],
         )
+    except HTTPException:
+        raise
     except NotFound as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
