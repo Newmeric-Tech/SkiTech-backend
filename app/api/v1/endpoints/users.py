@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_permission, require_roles
 from app.core.database import get_db
-from app.core.security import hash_password, verify_password
+from app.core.security import hash_password, pwd_context, verify_password
 from app.models.models import Role, User
 from app.schemas.schemas import (
     ChangePasswordRequest, UserInviteRequest, UserPropertyAssign,
@@ -134,6 +134,13 @@ async def change_password(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # verify_password raises on an empty or unrecognised stored hash, which was a 500
+    if not user.password_hash or not pwd_context.identify(user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account has no password set. Use Forgot password to set one.",
+        )
 
     if not verify_password(data.current_password, user.password_hash):
         raise HTTPException(

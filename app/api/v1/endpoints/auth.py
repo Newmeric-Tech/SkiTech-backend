@@ -17,7 +17,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -448,29 +448,46 @@ async def refresh_token(data: RefreshTokenRequest, db: AsyncSession = Depends(ge
     )
 
 
+async def _user_for_password_reset(db: AsyncSession, email: str):
+    """The one non-deleted user with this email, ignoring case.
+
+    The unique constraint on users.email is case-sensitive, so two accounts
+    can differ only by case. Neither gets a reset then: the caller answers
+    exactly as for an unknown email, so nothing is revealed.
+    """
+    result = await db.execute(
+        select(User).where(
+            func.lower(User.email) == email.strip().lower(),
+            User.deleted_at.is_(None),
+        )
+    )
+    users = result.scalars().all()
+    if len(users) > 1:
+        import logging
+        logging.getLogger("skitech").warning(
+            "[PASSWORD RESET] %d accounts share one email ignoring case; no reset sent", len(users)
+        )
+        return None
+    return users[0] if users else None
+
+
 @router.post("/forgot-password")
 async def forgot_password(data: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
     """Send OTP for password reset."""
-    result = await db.execute(
-        select(User).where(User.email == data.email, User.deleted_at.is_(None))
-    )
-    user = result.scalar_one_or_none()
+    user = await _user_for_password_reset(db, data.email)
     if user:
         otp = generate_otp()
         user.otp_code = otp
         user.otp_expires_at = datetime.utcnow() + timedelta(seconds=300)
         await db.commit()
-        send_otp(data.email, otp, purpose="password_reset")
+        send_otp(user.email, otp, purpose="password_reset")
     return {"message": "If that email is registered, an OTP has been sent."}
 
 
 @router.post("/reset-password")
 async def reset_password(data: PasswordResetConfirm, db: AsyncSession = Depends(get_db)):
     """Reset password using OTP."""
-    result = await db.execute(
-        select(User).where(User.email == data.email, User.deleted_at.is_(None))
-    )
-    user = result.scalar_one_or_none()
+    user = await _user_for_password_reset(db, data.email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
