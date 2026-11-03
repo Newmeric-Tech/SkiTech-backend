@@ -42,8 +42,11 @@ async def _request(db, radius=120):
 
 
 def _items(db):
+    """The reviewers' items by request id (the requester's own outcome item,
+    tests/test_inbox_notifications.py, shares the request id)."""
     db.session.expire_all()
-    return {str(i.source_record_id): i for i in db.session.execute(select(InboxItem)).scalars().all()}
+    return {str(i.source_record_id): i for i in db.session.execute(
+        select(InboxItem).where(InboxItem.item_type == "geofence_change_request")).scalars().all()}
 
 
 async def test_request_creates_one_unread_owner_item(db):

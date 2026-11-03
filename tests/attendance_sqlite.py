@@ -3,6 +3,7 @@ Shared in-memory SQLite harness for the attendance service tests: the real
 AttendanceRecord / PropertyGeofence tables behind an async-shaped wrapper.
 Never touches the .env database.
 """
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
@@ -28,6 +29,11 @@ class AsyncSQLite:
 
     async def flush(self):
         self.session.flush()
+
+    @asynccontextmanager
+    async def begin_nested(self):
+        with self.session.begin_nested():
+            yield
 
     async def commit(self):
         self.session.commit()

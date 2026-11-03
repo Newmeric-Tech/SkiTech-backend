@@ -5,11 +5,11 @@ Cross-module "needs your attention" feed. Items are written at the moment
 a source event fires (see app/services/inbox_service.py) — this router
 only reads/updates them, it never computes items from source tables live.
 
-v1 sources: complaints (escalated) and inventory (low stock) only. SOP
-approvals and shift-replacement requests are held back — see
-DEVELOPMENT_LOG.md ("Architecture Debt") for why — but the shared list
-endpoint and role-scoping below are written to take on new item_type /
-source_module values without redesign once those sources are added.
+Sources: complaints (escalated), inventory (low stock), punch location
+requests and punch-out corrections (to reviewers), plus personal
+notifications addressed to one user: KRA assigned, shift assigned or
+handed over, task assigned, and the outcome of the user's own location
+or correction request. KRA delays go to the property's "manager" queue.
 
 Shared endpoint, filtered server-side by role, same shape as Complaints:
   owner   (Tenant Admin / Co Admin / Super Admin) -> sees "manager" and
@@ -23,14 +23,14 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_db as get_db_session
 from app.models.inbox import InboxItem
 from app.schemas.common import PaginatedResponse
-from app.schemas.inbox import InboxItemResponse, InboxUnreadCountResponse
+from app.schemas.inbox import InboxItemResponse, InboxMarkAllReadResponse, InboxUnreadCountResponse
 
 router = APIRouter(prefix="/inbox", tags=["Inbox"])
 
@@ -45,7 +45,8 @@ async def get_inbox_context(user: dict = Depends(get_current_user)) -> dict:
         tier = "staff"
 
     return {
-        "tenant_id": UUID(user["tenant_id"]),
+        # A Super Admin's token may carry no tenant: they then have no inbox
+        "tenant_id": UUID(user["tenant_id"]) if user.get("tenant_id") else None,
         "user_id": UUID(user["user_id"]),
         "role": role,
         "tier": tier,
@@ -54,6 +55,8 @@ async def get_inbox_context(user: dict = Depends(get_current_user)) -> dict:
 
 
 def _scope_query(q, ctx: dict):
+    if ctx["tenant_id"] is None:
+        return q.where(false())
     q = q.where(InboxItem.tenant_id == ctx["tenant_id"])
 
     if ctx["tier"] == "owner":
@@ -134,6 +137,27 @@ async def unread_count(
     q = q.where(InboxItem.status == "unread")
     count = (await db.execute(q)).scalar() or 0
     return InboxUnreadCountResponse(unread_count=count)
+
+
+@router.put("/read-all", response_model=InboxMarkAllReadResponse)
+async def mark_all_read(
+    db: AsyncSession = Depends(get_db_session),
+    ctx: dict = Depends(get_inbox_context),
+):
+    """Mark every unread item the caller can see as read (same scope as the
+    list). Role-queue items ("manager"/"owner") have one status shared by
+    everyone in that queue, exactly as with PUT /{id}/read."""
+    from datetime import datetime
+
+    visible = _scope_query(select(InboxItem.id), ctx).where(InboxItem.status == "unread")
+    result = await db.execute(
+        update(InboxItem)
+        .where(InboxItem.id.in_(visible.scalar_subquery()), InboxItem.status == "unread")
+        .values(status="read", read_at=datetime.utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return InboxMarkAllReadResponse(updated=result.rowcount or 0)
 
 
 @router.put("/{item_id}/read", response_model=InboxItemResponse)

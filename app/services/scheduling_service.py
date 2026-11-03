@@ -20,6 +20,13 @@ from app.schemas.scheduling import (
     ConflictDetectionResult, RecommendedEmployeeScore, AIRecommendationResponse,
     ManagerDashboardData, StaffDashboardData, StaffTimelineEvent
 )
+from app.services.inbox_service import mark_inbox_items_actioned, notify
+
+INBOX_MODULE = "scheduling"
+
+
+def _shift_text(shift_date: datetime, start: str, end: str) -> str:
+    return f"{shift_date:%a %d %b}, {start}-{end}"
 
 
 class SchedulingService:
@@ -183,7 +190,28 @@ class SchedulingService:
         )
         self.db.add(shift)
         await self.db.flush()
+        await self._notify_employee(
+            employee_id, shift.id, "shift_assigned",
+            title=f"New shift: {_shift_text(shift.shift_date, shift.shift_start_time, shift.shift_end_time)}",
+            body="A shift was added to your schedule. It is on your My Schedule page.",
+        )
         return shift
+
+    async def _notify_employee(self, employee_id: UUID, source_record_id: UUID, item_type: str,
+                               title: str, body: str) -> None:
+        """Personal inbox item for the employee's login; employees without one
+        (or outside this tenant) get nothing."""
+        employee = (await self.db.execute(
+            select(Employee.user_id, Employee.property_id).where(
+                Employee.id == employee_id, Employee.tenant_id == self.tenant_id)
+        )).first()
+        if employee is None or employee.user_id is None:
+            return
+        await notify(
+            self.db, tenant_id=self.tenant_id, property_id=employee.property_id,
+            source_module=INBOX_MODULE, item_type=item_type, source_record_id=source_record_id,
+            recipient_user_id=employee.user_id, title=title, body=body,
+        )
 
     async def get_shift_assignment(self, shift_id: UUID) -> Optional[ShiftAssignment]:
         """Get shift assignment"""
@@ -342,6 +370,7 @@ class SchedulingService:
         """Directly assign replacement employee"""
         request = await self.get_replacement_request(request_id)
         if request:
+            previous = request.replacement_employee_id
             request.replacement_employee_id = replacement_employee_id
             request.status = "assigned"
             
@@ -352,6 +381,18 @@ class SchedulingService:
                 shift.status = "covered"
             
             await self.db.flush()
+            # Assigning the same person again doesn't notify twice; assigning
+            # someone else retires the earlier person's notification.
+            if previous is not None and previous != replacement_employee_id:
+                await mark_inbox_items_actioned(
+                    self.db, tenant_id=self.tenant_id, source_record_id=request.id,
+                    item_type="shift_reassigned")
+            await self._notify_employee(
+                replacement_employee_id, request.id, "shift_reassigned",
+                title=f"Shift assigned to you: "
+                      f"{_shift_text(request.shift_date, request.shift_start_time, request.shift_end_time)}",
+                body="You were assigned to cover this shift. It is on your My Schedule page.",
+            )
         return request
 
     # ─────────────────────────────────────────────────────────────

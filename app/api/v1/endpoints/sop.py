@@ -20,7 +20,8 @@ from pydantic import BaseModel
 from app.api.dependencies import get_current_user, require_permission, require_roles
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.models import Employee, SOPCategory, SOPExecution, SOPItem, SOPVersion
+from app.models.models import Employee, SOPCategory, SOPExecution, SOPItem, SOPVersion, User
+from app.services.inbox_service import notify
 from app.utils.safe_errors import log_safe_exception
 from app.schemas.schemas import (
     SOPCategoryCreate, SOPCategoryResponse,
@@ -91,6 +92,23 @@ async def list_categories(
 
 # ── SOP Items ─────────────────────────────────────────────
 
+async def _notify_task_assigned(db: AsyncSession, sop: SOPItem, execution: SOPExecution) -> None:
+    """Personal inbox item for the assignee, if they belong to this tenant."""
+    assignee = (await db.execute(
+        select(User.id).where(User.id == execution.user_id, User.tenant_id == sop.tenant_id)
+    )).scalar_one_or_none()
+    if assignee is None:
+        return
+    due = f" Due {sop.due_date:%d %b %Y}." if sop.due_date else ""
+    await notify(
+        db, tenant_id=sop.tenant_id, property_id=sop.property_id,
+        source_module="sop", item_type="task_assigned", source_record_id=execution.id,
+        recipient_user_id=assignee,
+        title=f"New task assigned: {sop.title}",
+        body=f"Priority: {sop.priority}.{due} It is on your My Tasks page.",
+    )
+
+
 @router.post("/items", response_model=SOPResponse, status_code=201)
 async def create_sop(
     property_id: UUID,
@@ -133,6 +151,8 @@ async def create_sop(
                 status="pending",
             )
             db.add(execution)
+            await db.flush()
+            await _notify_task_assigned(db, sop, execution)
 
         await db.commit()
         await db.refresh(sop)

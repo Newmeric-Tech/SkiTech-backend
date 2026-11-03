@@ -30,3 +30,7 @@ class InboxItemResponse(BaseModel):
 
 class InboxUnreadCountResponse(BaseModel):
     unread_count: int
+
+
+class InboxMarkAllReadResponse(BaseModel):
+    updated: int

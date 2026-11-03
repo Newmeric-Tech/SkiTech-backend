@@ -27,7 +27,7 @@ from app.schemas.attendance import AttendanceCorrectionCreate
 from app.services.attendance_service import AUTO_CLOSED, STALE_SHIFT_HOURS, _as_utc
 from app.services.geofence_request_service import RequestConflict, RequestForbidden, RequestNotFound
 from app.services.geofence_scope import GEOFENCE_ADMIN_ROLES, assigned_property, caller_tenant, current_role
-from app.services.inbox_service import create_inbox_item, mark_inbox_items_actioned
+from app.services.inbox_service import create_inbox_item, mark_inbox_items_actioned, notify
 
 PENDING = "pending"
 INBOX_MODULE = "attendance"
@@ -60,6 +60,20 @@ def _validate_claim(record: AttendanceRecord, claimed: datetime, now: datetime) 
 async def _close_inbox(db: AsyncSession, request: AttendanceCorrectionRequest) -> None:
     await mark_inbox_items_actioned(
         db, tenant_id=request.tenant_id, source_record_id=request.id, item_type=INBOX_ITEM_TYPE)
+
+
+async def _notify_requester(db: AsyncSession, request: AttendanceCorrectionRequest,
+                            hours: Optional[float] = None) -> None:
+    """Tell the requester their correction was approved or rejected."""
+    await notify(
+        db, tenant_id=request.tenant_id, property_id=request.property_id,
+        source_module=INBOX_MODULE, item_type=f"attendance_correction_{request.status}",
+        source_record_id=request.id, recipient_user_id=request.requested_by,
+        title=f"Punch-out correction {request.status}",
+        body=(f"Your missed punch-out correction was approved; the shift now counts {hours} h."
+              if request.status == "approved" else
+              "Your missed punch-out correction was rejected."),
+    )
 
 
 async def create_correction(
@@ -222,6 +236,7 @@ async def approve_correction(
     record.status = "completed"
     _close(request, "approved", reviewer, review_note)
     await _close_inbox(db, request)
+    await _notify_requester(db, request, record.hours_worked)
     await db.commit()
     await db.refresh(request)
     await db.refresh(record)
@@ -235,6 +250,7 @@ async def reject_correction(
     reviewer = await _ensure_reviewer(db, request, user)
     _close(request, "rejected", reviewer, review_note)
     await _close_inbox(db, request)
+    await _notify_requester(db, request)
     await db.commit()
     await db.refresh(request)
     return request

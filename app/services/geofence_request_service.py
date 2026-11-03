@@ -29,7 +29,7 @@ from app.schemas.attendance import GeofenceChangeRequestCreate
 from app.services.geofence_scope import (
     assigned_property, caller_tenant, property_in_scope, still_geofence_admin,
 )
-from app.services.inbox_service import create_inbox_item, mark_inbox_items_actioned
+from app.services.inbox_service import create_inbox_item, mark_inbox_items_actioned, notify
 
 REQUEST_ROLES = ("Super Admin", "Tenant Admin", "Co Admin", "Manager")
 PENDING = "pending"
@@ -45,6 +45,21 @@ INBOX_ITEM_TYPE = "geofence_change_request"
 async def _close_inbox_item(db: AsyncSession, request: "GeofenceChangeRequest") -> None:
     await mark_inbox_items_actioned(
         db, tenant_id=request.tenant_id, source_record_id=request.id, item_type=INBOX_ITEM_TYPE)
+
+
+async def _notify_requester(db: AsyncSession, request: "GeofenceChangeRequest") -> None:
+    """Tell the requester their request was approved or rejected."""
+    property_name = (await db.execute(
+        select(Property.name).where(Property.id == request.property_id))).scalar_one_or_none() or "your property"
+    approved = request.status == "approved"
+    await notify(
+        db, tenant_id=request.tenant_id, property_id=request.property_id,
+        source_module=INBOX_MODULE, item_type=f"geofence_request_{request.status}",
+        source_record_id=request.id, recipient_user_id=request.requested_by,
+        title=f"Punch location request {request.status}",
+        body=(f"The punch location you proposed for {property_name} is now in use." if approved else
+              f"The punch location you proposed for {property_name} was not applied."),
+    )
 
 
 class RequestNotFound(LookupError):
@@ -213,6 +228,8 @@ async def approve_request(
     _close(request, "approved", reviewer, review_note)
     await _close_inbox_item(db, request)
     try:
+        # notify() flushes the geofence write, so it sits inside this try
+        await _notify_requester(db, request)
         await db.commit()
     except IntegrityError:
         await db.rollback()
@@ -231,6 +248,7 @@ async def reject_request(
         raise RequestForbidden(ROLE_CHANGED)
     _close(request, "rejected", _user_id(user), review_note)
     await _close_inbox_item(db, request)
+    await _notify_requester(db, request)
     await db.commit()
     await db.refresh(request)
     return request

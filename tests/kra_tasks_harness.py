@@ -3,6 +3,7 @@ Shared helpers for the KRA task tests: real tables on in-memory SQLite behind
 an async-shaped wrapper, and row builders that also work on local Postgres.
 Never touches the .env database.
 """
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from sqlalchemy import create_engine
@@ -11,6 +12,7 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.models.inbox import InboxItem
 from app.models.kra_tasks import KraAssignment, KraDefinition, KraOccurrence
 from app.models.models import Property, Role, User
 
@@ -41,6 +43,11 @@ class SQLiteDB:
     async def flush(self):
         self.session.flush()
 
+    @asynccontextmanager
+    async def begin_nested(self):
+        with self.session.begin_nested():
+            yield
+
     async def commit(self):
         self.session.commit()
 
@@ -53,7 +60,7 @@ class SQLiteDB:
 
 def sqlite_db():
     engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
-    for model in (Role, User, Property, KraDefinition, KraAssignment, KraOccurrence):
+    for model in (Role, User, Property, KraDefinition, KraAssignment, KraOccurrence, InboxItem):
         model.__table__.create(engine)
     return SQLiteDB(Session(engine))
 

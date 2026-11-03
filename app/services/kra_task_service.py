@@ -27,8 +27,11 @@ from app.schemas.kra_tasks import DefinitionCreate, DefinitionUpdate, Occurrence
 from app.services.geofence_scope import (
     PropertyNotInScope, assigned_property, caller_tenant, current_role, property_in_scope,
 )
+from app.services.inbox_service import notify
 
 logger = logging.getLogger("skitech")
+
+INBOX_MODULE = "kra"
 
 # Most periods created per assignment in one call: over a year of daily tasks.
 # The newest missing periods are created first, and later calls continue with
@@ -336,6 +339,18 @@ async def assign_users(db: AsyncSession, user: dict, definition_id: UUID, user_i
     if rows:
         # uq_kra_assignment_active settles two managers assigning at once.
         await db.execute(_insert_ignoring_conflicts(db, KraAssignment, rows))
+        # Rows the insert skipped don't exist, so only real new assignments notify
+        inserted = (await db.execute(select(KraAssignment.id, KraAssignment.assignee_id).where(
+            KraAssignment.id.in_([row["id"] for row in rows])))).all()
+        assigner = (await names_for(db, [_caller_id(user)])).get(_caller_id(user)) or "Your manager"
+        for assignment_id, assignee_id in inserted:
+            await notify(
+                db, tenant_id=definition.tenant_id, property_id=definition.property_id,
+                source_module=INBOX_MODULE, item_type="kra_assigned", source_record_id=assignment_id,
+                recipient_user_id=assignee_id,
+                title=f"New KRA assigned: {definition.title} ({definition.frequency})",
+                body=f"{assigner} assigned you this {definition.frequency} task. It is on your My KRAs page.",
+            )
     await db.commit()
 
     created = (await db.execute(select(KraAssignment).where(
@@ -432,6 +447,18 @@ async def delay_occurrence(db: AsyncSession, user: dict, occurrence_id: UUID, da
     occurrence.was_delayed = True
     occurrence.delayed_at = datetime.utcnow()
     occurrence.delay_reason = data.reason
+    # The property's managers (and owners) hear about it; the reason stays
+    # on the task, out of the notification.
+    title, frequency = (await db.execute(select(KraDefinition.title, KraDefinition.frequency).where(
+        KraDefinition.id == occurrence.definition_id))).one()
+    name = (await names_for(db, [occurrence.assignee_id])).get(occurrence.assignee_id) or "A team member"
+    await notify(
+        db, tenant_id=occurrence.tenant_id, property_id=occurrence.property_id,
+        source_module=INBOX_MODULE, item_type="kra_delayed", source_record_id=occurrence.id,
+        recipient_role="manager",
+        title=f"{name} marked '{title}' as delayed",
+        body=f"{frequency.capitalize()} task for {occurrence.period_start} to {occurrence.period_end}.",
+    )
     await db.commit()
     await db.refresh(occurrence)
     return await _with_definition(db, occurrence.id)

@@ -11,6 +11,7 @@ Callers are expected to commit as part of their own existing transaction —
 these helpers only `db.add()` / mutate in-session objects.
 """
 
+import logging
 from typing import Optional
 from uuid import UUID
 
@@ -18,6 +19,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.inbox import InboxItem
+from app.utils.safe_errors import log_safe_exception
+
+logger = logging.getLogger("skitech")
+
+TITLE_MAX = 255  # inbox_items.title is VARCHAR(255)
 
 
 async def create_inbox_item(
@@ -68,6 +74,27 @@ async def create_inbox_item(
     )
     db.add(item)
     return item
+
+
+async def notify(db: AsyncSession, **fields) -> Optional[InboxItem]:
+    """create_inbox_item for a notification that must never fail the action
+    that caused it (an assignment, an approval...). Same transaction as the
+    caller, so it commits with the caller's commit.
+
+    The caller's own pending changes are flushed first, outside the
+    savepoint, so their errors stay theirs; rolling the savepoint back can
+    only undo the notification. A failed write is logged and skipped.
+    """
+    fields["title"] = fields["title"][:TITLE_MAX]
+    await db.flush()
+    try:
+        async with db.begin_nested():
+            item = await create_inbox_item(db, **fields)
+            await db.flush()
+        return item
+    except Exception as exc:
+        log_safe_exception(logger, "[INBOX] notification not saved", exc)
+        return None
 
 
 async def mark_inbox_items_actioned(
